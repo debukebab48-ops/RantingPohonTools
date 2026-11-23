@@ -2,7 +2,8 @@ package com.rantingpohon.tools
 
 import android.content.Context
 import android.net.Uri
-import androidx.documentfile.provider.DocumentFile
+import android.provider.DocumentsContract
+import android.webkit.MimeTypeMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -31,7 +32,6 @@ object BundleUnpacker {
             }
 
             var content = rawText.substring(contentStart, contentEnd)
-            // Hapus 2 newline pemisah antar blok file di bagian akhir
             if (content.endsWith("\r\n\r\n")) {
                 content = content.dropLast(4)
             } else if (content.endsWith("\n\n")) {
@@ -51,22 +51,18 @@ object BundleUnpacker {
             }
         }
 
-        val allPaths = (dirSet + fileMap.keys).distinct().sortedWith(
-            compareBy<String> { it.substringBeforeLast('/', "") }
-                .thenBy { !dirSet.contains(it) }
-                .thenBy { it.lowercase() }
-        )
-
-        // Urutkan secara hierarki pohon (DFS) agar tampil rapi di RecyclerView
         val orderedNodes = mutableListOf<TreeNode>()
         fun addChildren(parentPath: String, depth: Int) {
             val childrenDirs = dirSet.filter {
-                val p = it.substringBeforeLast('/', "")
-                p == parentPath
+                it.substringBeforeLast('/', "") == parentPath
             }.sortedBy { it.lowercase() }
 
             for (dir in childrenDirs) {
-                val subFilesChars = fileMap.filterKeys { it.startsWith("$dir/") }.values.sumOf { it.length.toLong() }
+                val subFilesChars = fileMap
+                    .filterKeys { it.startsWith("$dir/") }
+                    .values
+                    .sumOf { it.length.toLong() }
+
                 orderedNodes.add(
                     TreeNode(
                         path = dir,
@@ -82,8 +78,7 @@ object BundleUnpacker {
             }
 
             val childrenFiles = fileMap.keys.filter {
-                val p = it.substringBeforeLast('/', "")
-                p == parentPath
+                it.substringBeforeLast('/', "") == parentPath
             }.sortedBy { it.lowercase() }
 
             for (file in childrenFiles) {
@@ -113,11 +108,9 @@ object BundleUnpacker {
         fileNodes: List<TreeNode>,
         onProgress: (Int, Int, String) -> Unit
     ): Int = withContext(Dispatchers.IO) {
-        val rootDoc = DocumentFile.fromTreeUri(context, rootUri)
-            ?: throw IllegalStateException("Folder tujuan tidak dapat diakses.")
-
-        val dirCache = mutableMapOf<String, DocumentFile>()
-        dirCache[""] = rootDoc
+        val rootDocId = DocumentsContract.getTreeDocumentId(rootUri)
+        val dirDocIdCache = mutableMapOf<String, String>()
+        dirDocIdCache[""] = rootDocId
 
         var successCount = 0
         fileNodes.forEachIndexed { index, node ->
@@ -129,14 +122,31 @@ object BundleUnpacker {
                 onProgress(index + 1, fileNodes.size, fileName)
             }
 
-            val targetDir = getOrCreateDir(rootDoc, parentPath, dirCache)
-            targetDir.findFile(fileName)?.delete()
+            val targetDirDocId = getOrCreateDirDocId(context, rootUri, parentPath, dirDocIdCache)
 
-            val createdFile = targetDir.createFile("application/octet-stream", fileName)
-                ?: targetDir.createFile("text/plain", fileName)
-                ?: throw IllegalStateException("Gagal membuat file: $cleanPath")
+            // Hapus file lama jika namanya sama agar tidak duplikat (misal jadi file (1).kt)
+            val existingFileDocId = findChildDocId(context, rootUri, targetDirDocId, fileName, wantDir = false)
+            if (existingFileDocId != null) {
+                val oldUri = DocumentsContract.buildDocumentUriUsingTree(rootUri, existingFileDocId)
+                try {
+                    DocumentsContract.deleteDocument(context.contentResolver, oldUri)
+                } catch (_: Exception) {
+                }
+            }
 
-            context.contentResolver.openOutputStream(createdFile.uri)?.bufferedWriter()?.use {
+            val parentDirUri = DocumentsContract.buildDocumentUriUsingTree(rootUri, targetDirDocId)
+            val ext = fileName.substringAfterLast('.', "").lowercase()
+            val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
+                ?: "application/octet-stream"
+
+            val createdFileUri = DocumentsContract.createDocument(
+                context.contentResolver,
+                parentDirUri,
+                mimeType,
+                fileName
+            ) ?: throw IllegalStateException("Gagal membuat file: $cleanPath")
+
+            context.contentResolver.openOutputStream(createdFileUri)?.bufferedWriter()?.use {
                 it.write(node.cachedContent ?: "")
             }
             successCount++
@@ -144,35 +154,74 @@ object BundleUnpacker {
         successCount
     }
 
-    private fun getOrCreateDir(
-        rootDoc: DocumentFile,
+    private fun getOrCreateDirDocId(
+        context: Context,
+        rootUri: Uri,
         dirPath: String,
-        cache: MutableMap<String, DocumentFile>
-    ): DocumentFile {
-        if (dirPath.isEmpty()) return rootDoc
+        cache: MutableMap<String, String>
+    ): String {
+        if (dirPath.isEmpty()) return cache[""]!!
         cache[dirPath]?.let { return it }
 
         val parts = dirPath.split("/")
-        var currentDoc = rootDoc
+        var currentDocId = cache[""]!!
         var currentPath = ""
 
         for (part in parts) {
             currentPath = if (currentPath.isEmpty()) part else "$currentPath/$part"
             val cached = cache[currentPath]
             if (cached != null) {
-                currentDoc = cached
+                currentDocId = cached
             } else {
-                val existing = currentDoc.findFile(part)
-                val nextDoc = if (existing != null && existing.isDirectory) {
-                    existing
+                val existingDocId = findChildDocId(context, rootUri, currentDocId, part, wantDir = true)
+                val nextDocId = if (existingDocId != null) {
+                    existingDocId
                 } else {
-                    currentDoc.createDirectory(part)
-                        ?: throw IllegalStateException("Gagal membuat folder: $currentPath")
+                    val parentUri = DocumentsContract.buildDocumentUriUsingTree(rootUri, currentDocId)
+                    val newDirUri = DocumentsContract.createDocument(
+                        context.contentResolver,
+                        parentUri,
+                        DocumentsContract.Document.MIME_TYPE_DIR,
+                        part
+                    ) ?: throw IllegalStateException("Gagal membuat folder: $currentPath")
+                    DocumentsContract.getDocumentId(newDirUri)
                 }
-                cache[currentPath] = nextDoc
-                currentDoc = nextDoc
+                cache[currentPath] = nextDocId
+                currentDocId = nextDocId
             }
         }
-        return currentDoc
+        return currentDocId
+    }
+
+    private fun findChildDocId(
+        context: Context,
+        rootUri: Uri,
+        parentDocId: String,
+        targetName: String,
+        wantDir: Boolean
+    ): String? {
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(rootUri, parentDocId)
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE
+        )
+        context.contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+            val idIdx = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+            val nameIdx = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+            val mimeIdx = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
+
+            while (cursor.moveToNext()) {
+                val name = cursor.getString(nameIdx) ?: continue
+                if (name == targetName) {
+                    val mime = cursor.getString(mimeIdx) ?: ""
+                    val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
+                    if (isDir == wantDir) {
+                        return cursor.getString(idIdx)
+                    }
+                }
+            }
+        }
+        return null
     }
 }
