@@ -217,57 +217,6 @@
             android:textSize="11sp" />
     </LinearLayout>
 
-    <!-- Unpack Panel -->
-    <LinearLayout
-        android:id="@+id/panelUnpack"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:paddingHorizontal="12dp"
-        android:paddingTop="8dp"
-        android:visibility="gone">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/btnUnpackPaste"
-                android:layout_width="0dp"
-                android:layout_height="42dp"
-                android:layout_marginEnd="6dp"
-                android:layout_weight="1"
-                android:backgroundTint="#8957E5"
-                android:text="Paste Teks Bundel"
-                android:textAllCaps="false"
-                android:textColor="#FFFFFF"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <Button
-                android:id="@+id/btnUnpackPickTxt"
-                android:layout_width="0dp"
-                android:layout_height="42dp"
-                android:layout_marginStart="6dp"
-                android:layout_weight="1"
-                android:backgroundTint="#21262D"
-                android:text="Pilih File .txt"
-                android:textAllCaps="false"
-                android:textColor="#E6EDF3"
-                android:textSize="12sp" />
-        </LinearLayout>
-
-        <TextView
-            android:id="@+id/tvUnpackInfo"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="Muat teks hasil Copy Tree+Code atau file .txt untuk dibongkar."
-            android:textColor="#8B949E"
-            android:textSize="11sp" />
-    </LinearLayout>
-
     <!-- Filter & Selection Controls -->
     <LinearLayout
         android:layout_width="match_parent"
