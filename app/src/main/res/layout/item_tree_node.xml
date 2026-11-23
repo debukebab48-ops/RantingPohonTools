@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/rowContainer"
+    android:layout_width="match_parent"
+    android:layout_height="38dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingEnd="8dp">
+
+    <TextView
+        android:id="@+id/tvArrow"
+        android:layout_width="20dp"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:text="▼"
+        android:textColor="#8B949E"
+        android:textSize="10sp" />
+
+    <CheckBox
+        android:id="@+id/cbNode"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:buttonTint="#238636" />
+
+    <TextView
+        android:id="@+id/tvIcon"
+        android:layout_width="22dp"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:text="📄"
+        android:textSize="13sp" />
+
+    <TextView
+        android:id="@+id/tvName"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:ellipsize="middle"
+        android:singleLine="true"
+        android:text="MainActivity.kt"
+        android:textColor="#E6EDF3"
+        android:textSize="13sp" />
+
+    <TextView
+        android:id="@+id/tvCharCount"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:text="1.240 karakter"
+        android:textColor="#8B949E"
+        android:textSize="11sp" />
+</LinearLayout>
