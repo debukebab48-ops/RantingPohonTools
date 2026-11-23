@@ -33,7 +33,7 @@ class MainActivity : AppCompatActivity() {
 
     private var allNodes: List<TreeNode> = emptyList()
     private var rootLabel: String = "Project"
-    private var isGithubMode: Boolean = true
+    private var currentMode: Int = 0 // 0 = GitHub, 1 = Local, 2 = Unpack
     private var pendingExportText: String = ""
 
     private val numberFormat = NumberFormat.getNumberInstance(Locale("id", "ID"))
@@ -47,6 +47,51 @@ class MainActivity : AppCompatActivity() {
             )
             binding.tvLocalPath.text = uri.lastPathSegment ?: uri.toString()
             scanLocalFolder(uri)
+        }
+    }
+
+    private val openTxtForUnpackLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            binding.tvStatus.text = "Membaca file .txt..."
+            lifecycleScope.launch {
+                try {
+                    val rawText = withContext(Dispatchers.IO) {
+                        scanner.readLocalUriText(uri)
+                    }
+                    binding.tvUnpackInfo.text = "Sumber: ${uri.lastPathSegment ?: "File .txt"}"
+                    loadBundleForUnpack(rawText)
+                } catch (e: Exception) {
+                    binding.tvStatus.text = "Gagal membaca file: ${e.message}"
+                }
+            }
+        }
+    }
+
+    private val extractDestinationLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val checkedFiles = allNodes.filter { !it.isDirectory && it.isChecked }
+            if (checkedFiles.isEmpty()) {
+                Toast.makeText(this, "Tidak ada file yang dicentang", Toast.LENGTH_SHORT).show()
+                return@registerForActivityResult
+            }
+            lifecycleScope.launch {
+                try {
+                    val count = BundleUnpacker.extractNodesToUri(
+                        this@MainActivity, uri, checkedFiles
+                    ) { current, total, fileName ->
+                        binding.tvStatus.text = "Mengekstrak ($current/$total): $fileName"
+                    }
+                    binding.tvStatus.text = "Selesai! $count file berhasil diekstrak ke folder tujuan."
+                    Toast.makeText(this@MainActivity, "Berhasil extract $count file!", Toast.LENGTH_LONG).show()
+                } catch (e: Exception) {
+                    binding.tvStatus.text = "Error extract: ${e.message}"
+                    Toast.makeText(this@MainActivity, "Gagal: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
 
@@ -96,8 +141,33 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupListeners() {
-        binding.btnTabGithub.setOnClickListener { switchMode(true) }
-        binding.btnTabLocal.setOnClickListener { switchMode(false) }
+        binding.btnTabGithub.setOnClickListener { switchMode(0) }
+        binding.btnTabLocal.setOnClickListener { switchMode(1) }
+        binding.btnTabUnpack.setOnClickListener { switchMode(2) }
+
+        binding.btnUnpackPaste.setOnClickListener {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clipText = clipboard.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()
+            if (clipText.isNullOrBlank()) {
+                Toast.makeText(this, "Clipboard kosong", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            binding.tvUnpackInfo.text = "Sumber: Clipboard (${numberFormat.format(clipText.length)} karakter)"
+            loadBundleForUnpack(clipText)
+        }
+
+        binding.btnUnpackPickTxt.setOnClickListener {
+            openTxtForUnpackLauncher.launch(arrayOf("text/plain", "*/*"))
+        }
+
+        binding.btnExtractToFolder.setOnClickListener {
+            val checkedFiles = allNodes.filter { !it.isDirectory && it.isChecked }
+            if (checkedFiles.isEmpty()) {
+                Toast.makeText(this, "Muat bundel & centang minimal 1 file dulu", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            extractDestinationLauncher.launch(null)
+        }
 
         binding.btnScanGithub.setOnClickListener {
             val url = binding.etRepoUrl.text.toString()
@@ -173,20 +243,42 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun switchMode(github: Boolean) {
-        isGithubMode = github
-        binding.panelGithub.visibility = if (github) View.VISIBLE else View.GONE
-        binding.panelLocal.visibility = if (github) View.GONE else View.VISIBLE
+    private fun switchMode(mode: Int) {
+        currentMode = mode
+        binding.panelGithub.visibility = if (mode == 0) View.VISIBLE else View.GONE
+        binding.panelLocal.visibility = if (mode == 1) View.VISIBLE else View.GONE
+        binding.panelUnpack.visibility = if (mode == 2) View.VISIBLE else View.GONE
+
+        binding.bottomBarPack.visibility = if (mode == 2) View.GONE else View.VISIBLE
+        binding.bottomBarUnpack.visibility = if (mode == 2) View.VISIBLE else View.GONE
 
         binding.btnTabGithub.backgroundTintList = ColorStateList.valueOf(
-            Color.parseColor(if (github) "#238636" else "#21262D")
+            Color.parseColor(if (mode == 0) "#238636" else "#21262D")
         )
-        binding.btnTabGithub.setTextColor(Color.parseColor(if (github) "#FFFFFF" else "#8B949E"))
+        binding.btnTabGithub.setTextColor(Color.parseColor(if (mode == 0) "#FFFFFF" else "#8B949E"))
 
         binding.btnTabLocal.backgroundTintList = ColorStateList.valueOf(
-            Color.parseColor(if (!github) "#1F6FEB" else "#21262D")
+            Color.parseColor(if (mode == 1) "#1F6FEB" else "#21262D")
         )
-        binding.btnTabLocal.setTextColor(Color.parseColor(if (!github) "#FFFFFF" else "#8B949E"))
+        binding.btnTabLocal.setTextColor(Color.parseColor(if (mode == 1) "#FFFFFF" else "#8B949E"))
+
+        binding.btnTabUnpack.backgroundTintList = ColorStateList.valueOf(
+            Color.parseColor(if (mode == 2) "#8957E5" else "#21262D")
+        )
+        binding.btnTabUnpack.setTextColor(Color.parseColor(if (mode == 2) "#FFFFFF" else "#8B949E"))
+    }
+
+    private fun loadBundleForUnpack(rawText: String) {
+        val parsed = BundleUnpacker.parseBundleToNodes(rawText)
+        if (parsed.isEmpty()) {
+            binding.tvStatus.text = "Format bundel tidak dikenali (pastikan ada blok FILE: ...)."
+            Toast.makeText(this, "Tidak ditemukan blok FILE: dalam teks", Toast.LENGTH_SHORT).show()
+            return
+        }
+        allNodes = parsed
+        refreshVisibleList()
+        val fileCount = parsed.count { !it.isDirectory }
+        binding.tvStatus.text = "Siap bongkar: $fileCount file ditemukan. Silakan pilih folder tujuan."
     }
 
     private fun scanGithub(url: String, token: String) {
@@ -280,7 +372,7 @@ class MainActivity : AppCompatActivity() {
             sb.append(treeHeader).append("\n\n")
 
             for (fileNode in checkedFiles) {
-                val content = if (isGithubMode) {
+                val content = if (currentMode == 0) {
                     scanner.fetchGithubFileContent(fileNode, token)
                 } else {
                     fileNode.cachedContent ?: withContext(Dispatchers.IO) {
