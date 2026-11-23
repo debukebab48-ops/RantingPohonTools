@@ -141,6 +141,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupListeners() {
+        binding.btnResetAll.setOnClickListener { resetAllState() }
+
         binding.btnTabGithub.setOnClickListener { switchMode(0) }
         binding.btnTabLocal.setOnClickListener { switchMode(1) }
         binding.btnTabUnpack.setOnClickListener { switchMode(2) }
@@ -241,6 +243,21 @@ class MainActivity : AppCompatActivity() {
                 createTxtLauncher.launch("${rootLabel}_tree.txt")
             }
         }
+    }
+
+    private fun resetAllState() {
+        allNodes = emptyList()
+        rootLabel = "Project"
+        pendingExportText = ""
+
+        binding.etRepoUrl.text?.clear()
+        binding.etSearch.text?.clear()
+        binding.tvLocalPath.text = "Belum ada folder dipilih"
+        binding.tvUnpackInfo.text = "Muat teks hasil Copy Tree+Code atau file .txt untuk dibongkar."
+        binding.tvStatus.text = "Bersih! Siap memindai repository atau folder lokal."
+
+        refreshVisibleList()
+        Toast.makeText(this, "Semua bekas berhasil dibersihkan", Toast.LENGTH_SHORT).show()
     }
 
     private fun switchMode(mode: Int) {
