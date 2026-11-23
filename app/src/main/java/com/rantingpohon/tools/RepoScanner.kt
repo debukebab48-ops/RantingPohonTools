@@ -7,7 +7,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
 import org.json.JSONObject
+
+data class GithubRepoItem(
+    val fullName: String,
+    val htmlUrl: String,
+    val isPrivate: Boolean
+)
 
 class RepoScanner(private val context: Context) {
 
@@ -31,6 +38,38 @@ class RepoScanner(private val context: Context) {
 
     fun shouldAutoIgnore(path: String): Boolean {
         return path.split("/").any { it in ignoredSegments }
+    }
+
+    suspend fun fetchUserRepos(token: String): List<GithubRepoItem> = withContext(Dispatchers.IO) {
+        val cleanToken = token.trim()
+        if (cleanToken.isEmpty()) {
+            throw IllegalArgumentException("Masukkan GitHub Token dulu.")
+        }
+
+        val req = Request.Builder()
+            .url("https://api.github.com/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .build()
+
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                throw Exception("Gagal memuat daftar repo (${resp.code}). Pastikan Token valid.")
+            }
+            val arr = JSONArray(resp.body?.string() ?: "[]")
+            val repos = mutableListOf<GithubRepoItem>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                repos.add(
+                    GithubRepoItem(
+                        fullName = obj.getString("full_name"),
+                        htmlUrl = obj.getString("html_url"),
+                        isPrivate = obj.optBoolean("private", false)
+                    )
+                )
+            }
+            repos
+        }
     }
 
     suspend fun scanGithubRepo(repoUrl: String, token: String?): List<TreeNode> = withContext(Dispatchers.IO) {
