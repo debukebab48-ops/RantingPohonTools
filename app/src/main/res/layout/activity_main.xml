@@ -159,12 +159,24 @@
                 android:id="@+id/btnSelectMyRepo"
                 android:layout_width="wrap_content"
                 android:layout_height="38dp"
-                android:layout_marginStart="8dp"
+                android:layout_marginStart="6dp"
                 android:backgroundTint="#1F6FEB"
                 android:text="Pilih Repo"
                 android:textAllCaps="false"
                 android:textColor="#FFFFFF"
                 android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btnNewGithubFile"
+                android:layout_width="wrap_content"
+                android:layout_height="38dp"
+                android:layout_marginStart="6dp"
+                android:backgroundTint="#238636"
+                android:text="+ File"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:textStyle="bold" />
         </LinearLayout>
     </LinearLayout>
 
@@ -410,13 +422,28 @@
 
         <Button
             android:id="@+id/btnExtractToFolder"
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="42dp"
+            android:layout_marginEnd="6dp"
+            android:layout_weight="1"
             android:backgroundTint="#8957E5"
-            android:text="Pilih Folder Tujuan &amp; Extract File Tercentang"
+            android:text="Extract ke HP"
             android:textAllCaps="false"
             android:textColor="#FFFFFF"
-            android:textSize="13sp"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnPushUnpackToGithub"
+            android:layout_width="0dp"
+            android:layout_height="42dp"
+            android:layout_marginStart="6dp"
+            android:layout_weight="1"
+            android:backgroundTint="#238636"
+            android:text="Push ke GitHub"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
             android:textStyle="bold" />
     </LinearLayout>
 </LinearLayout>
