@@ -3,10 +3,13 @@ package com.rantingpohon.tools
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -150,6 +153,97 @@ class RepoScanner(private val context: Context) {
         node.cachedContent = text
         node.charCount = text.length.toLong()
         text
+    }
+
+    private fun parseOwnerRepo(repoUrl: String): Pair<String, String> {
+        val cleanUrl = repoUrl.trim().removeSuffix("/").removeSuffix(".git")
+        val match = Regex("github\\.com/([^/]+)/([^/]+)").find(cleanUrl)
+            ?: throw IllegalArgumentException("Format URL GitHub tidak valid.")
+        return match.groupValues[1] to match.groupValues[2]
+    }
+
+    private fun getFileShaIfExists(owner: String, repo: String, filePath: String, token: String): String? {
+        val cleanPath = filePath.trimStart('/')
+        val req = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/contents/$cleanPath")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer ${token.trim()}")
+            .build()
+        return client.newCall(req).execute().use { resp ->
+            if (resp.isSuccessful) {
+                JSONObject(resp.body?.string() ?: "{}").optString("sha").takeIf { it.isNotEmpty() }
+            } else null
+        }
+    }
+
+    suspend fun upsertGithubFile(
+        repoUrl: String,
+        token: String,
+        filePath: String,
+        content: String,
+        commitMessage: String
+    ) = withContext(Dispatchers.IO) {
+        val cleanToken = token.trim()
+        if (cleanToken.isEmpty()) throw IllegalArgumentException("GitHub Token wajib diisi untuk mengubah repo.")
+        val (owner, repo) = parseOwnerRepo(repoUrl)
+        val cleanPath = filePath.trim().trimStart('/')
+        if (cleanPath.isEmpty()) throw IllegalArgumentException("Path file tidak boleh kosong.")
+
+        val existingSha = getFileShaIfExists(owner, repo, cleanPath, cleanToken)
+        val encodedContent = Base64.encodeToString(content.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+
+        val payload = JSONObject().apply {
+            put("message", commitMessage.ifBlank { "Update $cleanPath via RantingPohonTools" })
+            put("content", encodedContent)
+            if (existingSha != null) put("sha", existingSha)
+        }
+
+        val req = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/contents/$cleanPath")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .put(payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .build()
+
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                val errBody = resp.body?.string() ?: ""
+                throw Exception("Gagal commit (${resp.code}): $errBody")
+            }
+        }
+    }
+
+    suspend fun deleteGithubFile(
+        repoUrl: String,
+        token: String,
+        filePath: String,
+        commitMessage: String
+    ) = withContext(Dispatchers.IO) {
+        val cleanToken = token.trim()
+        if (cleanToken.isEmpty()) throw IllegalArgumentException("GitHub Token wajib diisi.")
+        val (owner, repo) = parseOwnerRepo(repoUrl)
+        val cleanPath = filePath.trim().trimStart('/')
+
+        val sha = getFileShaIfExists(owner, repo, cleanPath, cleanToken)
+            ?: throw Exception("File tidak ditemukan di GitHub atau sudah terhapus.")
+
+        val payload = JSONObject().apply {
+            put("message", commitMessage.ifBlank { "Delete $cleanPath via RantingPohonTools" })
+            put("sha", sha)
+        }
+
+        val req = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/contents/$cleanPath")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .delete(payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .build()
+
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                throw Exception("Gagal menghapus file (${resp.code}).")
+            }
+        }
     }
 
     suspend fun scanLocalTree(treeUri: Uri): List<TreeNode> = withContext(Dispatchers.IO) {

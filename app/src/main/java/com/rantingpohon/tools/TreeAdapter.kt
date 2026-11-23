@@ -11,7 +11,8 @@ import java.util.Locale
 
 class TreeAdapter(
     private val onToggleExpand: (TreeNode) -> Unit,
-    private val onToggleCheck: (TreeNode, Boolean) -> Unit
+    private val onToggleCheck: (TreeNode, Boolean) -> Unit,
+    private val onFileClick: (TreeNode) -> Unit
 ) : RecyclerView.Adapter<TreeAdapter.NodeViewHolder>() {
 
     private var visibleNodes: List<TreeNode> = emptyList()
@@ -76,7 +77,7 @@ class TreeAdapter(
                 if (node.isDirectory) {
                     onToggleExpand(node)
                 } else {
-                    onToggleCheck(node, !node.isChecked)
+                    onFileClick(node)
                 }
             }
         }

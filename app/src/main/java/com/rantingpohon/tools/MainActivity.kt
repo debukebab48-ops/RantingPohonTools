@@ -10,7 +10,10 @@ import android.net.Uri
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
+import android.graphics.Typeface
 import android.view.View
+import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -132,6 +135,9 @@ class MainActivity : AppCompatActivity() {
             onToggleCheck = { node, checked ->
                 applyCheckRecursive(node, checked)
                 refreshVisibleList()
+            },
+            onFileClick = { fileNode ->
+                openFileEditorDialog(fileNode)
             }
         )
 
@@ -193,6 +199,181 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
             showMyReposDialog(token)
+        }
+
+        binding.btnNewGithubFile.setOnClickListener {
+            val url = binding.etRepoUrl.text.toString().trim()
+            val token = binding.etGithubToken.text.toString().trim()
+            if (url.isEmpty() || token.isEmpty()) {
+                Toast.makeText(this, "Isi URL Repo & GitHub Token dulu", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            openNewFileDialog(url, token)
+        }
+
+        binding.btnPushUnpackToGithub.setOnClickListener {
+            val url = binding.etRepoUrl.text.toString().trim()
+            val token = binding.etGithubToken.text.toString().trim()
+            val checkedFiles = allNodes.filter { !it.isDirectory && it.isChecked }
+            if (url.isEmpty() || token.isEmpty()) {
+                Toast.makeText(this, "Pilih repo & isi Token di tab GitHub Repo dulu", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            if (checkedFiles.isEmpty()) {
+                Toast.makeText(this, "Centang minimal 1 file hasil unpack dulu", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            pushUnpackedFilesToGithub(url, token, checkedFiles)
+        }
+
+        binding.btnNewGithubFile.setOnClickListener {
+            val url = binding.etRepoUrl.text.toString().trim()
+            val token = binding.etGithubToken.text.toString().trim()
+            if (url.isEmpty() || token.isEmpty()) {
+                Toast.makeText(this, "Isi URL Repo & GitHub Token dulu", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            openNewFileDialog(url, token)
+        }
+
+        binding.btnPushUnpackToGithub.setOnClickListener {
+            val url = binding.etRepoUrl.text.toString().trim()
+            val token = binding.etGithubToken.text.toString().trim()
+            val checkedFiles = allNodes.filter { !it.isDirectory && it.isChecked }
+            if (url.isEmpty() || token.isEmpty()) {
+                Toast.makeText(this, "Pilih repo & isi Token di tab GitHub Repo dulu", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            if (checkedFiles.isEmpty()) {
+                Toast.makeText(this, "Centang minimal 1 file hasil unpack dulu", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            pushUnpackedFilesToGithub(url, token, checkedFiles)
+        }
+
+        binding.btnNewGithubFile.setOnClickListener {
+            val url = binding.etRepoUrl.text.toString().trim()
+            val token = binding.etGithubToken.text.toString().trim()
+            if (url.isEmpty() || token.isEmpty()) {
+                Toast.makeText(this, "Isi URL Repo & GitHub Token dulu", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            openNewFileDialog(url, token)
+        }
+
+        binding.btnPushUnpackToGithub.setOnClickListener {
+            val url = binding.etRepoUrl.text.toString().trim()
+            val token = binding.etGithubToken.text.toString().trim()
+            val checkedFiles = allNodes.filter { !it.isDirectory && it.isChecked }
+            if (url.isEmpty() || token.isEmpty()) {
+                Toast.makeText(this, "Pilih repo & isi Token di tab GitHub Repo dulu", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            if (checkedFiles.isEmpty()) {
+                Toast.makeText(this, "Centang minimal 1 file hasil unpack dulu", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            pushUnpackedFilesToGithub(url, token, checkedFiles)
+        }
+
+        binding.btnNewGithubFile.setOnClickListener {
+            val url = binding.etRepoUrl.text.toString().trim()
+            val token = binding.etGithubToken.text.toString().trim()
+            if (url.isEmpty() || token.isEmpty()) {
+                Toast.makeText(this, "Isi URL Repo & GitHub Token dulu", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            openNewFileDialog(url, token)
+        }
+
+        binding.btnPushUnpackToGithub.setOnClickListener {
+            val url = binding.etRepoUrl.text.toString().trim()
+            val token = binding.etGithubToken.text.toString().trim()
+            val checkedFiles = allNodes.filter { !it.isDirectory && it.isChecked }
+            if (url.isEmpty() || token.isEmpty()) {
+                Toast.makeText(this, "Pilih repo & isi Token di tab GitHub Repo dulu", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            if (checkedFiles.isEmpty()) {
+                Toast.makeText(this, "Centang minimal 1 file hasil unpack dulu", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            pushUnpackedFilesToGithub(url, token, checkedFiles)
+        }
+
+        binding.btnNewGithubFile.setOnClickListener {
+            val url = binding.etRepoUrl.text.toString().trim()
+            val token = binding.etGithubToken.text.toString().trim()
+            if (url.isEmpty() || token.isEmpty()) {
+                Toast.makeText(this, "Isi URL Repo & GitHub Token dulu", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            openNewFileDialog(url, token)
+        }
+
+        binding.btnPushUnpackToGithub.setOnClickListener {
+            val url = binding.etRepoUrl.text.toString().trim()
+            val token = binding.etGithubToken.text.toString().trim()
+            val checkedFiles = allNodes.filter { !it.isDirectory && it.isChecked }
+            if (url.isEmpty() || token.isEmpty()) {
+                Toast.makeText(this, "Pilih repo & isi Token di tab GitHub Repo dulu", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            if (checkedFiles.isEmpty()) {
+                Toast.makeText(this, "Centang minimal 1 file hasil unpack dulu", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            pushUnpackedFilesToGithub(url, token, checkedFiles)
+        }
+
+        binding.btnNewGithubFile.setOnClickListener {
+            val url = binding.etRepoUrl.text.toString().trim()
+            val token = binding.etGithubToken.text.toString().trim()
+            if (url.isEmpty() || token.isEmpty()) {
+                Toast.makeText(this, "Isi URL Repo & GitHub Token dulu", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            openNewFileDialog(url, token)
+        }
+
+        binding.btnPushUnpackToGithub.setOnClickListener {
+            val url = binding.etRepoUrl.text.toString().trim()
+            val token = binding.etGithubToken.text.toString().trim()
+            val checkedFiles = allNodes.filter { !it.isDirectory && it.isChecked }
+            if (url.isEmpty() || token.isEmpty()) {
+                Toast.makeText(this, "Pilih repo & isi Token di tab GitHub Repo dulu", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            if (checkedFiles.isEmpty()) {
+                Toast.makeText(this, "Centang minimal 1 file hasil unpack dulu", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            pushUnpackedFilesToGithub(url, token, checkedFiles)
+        }
+
+        binding.btnNewGithubFile.setOnClickListener {
+            val url = binding.etRepoUrl.text.toString().trim()
+            val token = binding.etGithubToken.text.toString().trim()
+            if (url.isEmpty() || token.isEmpty()) {
+                Toast.makeText(this, "Isi URL Repo & GitHub Token dulu", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            openNewFileDialog(url, token)
+        }
+
+        binding.btnPushUnpackToGithub.setOnClickListener {
+            val url = binding.etRepoUrl.text.toString().trim()
+            val token = binding.etGithubToken.text.toString().trim()
+            val checkedFiles = allNodes.filter { !it.isDirectory && it.isChecked }
+            if (url.isEmpty() || token.isEmpty()) {
+                Toast.makeText(this, "Pilih repo & isi Token di tab GitHub Repo dulu", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            if (checkedFiles.isEmpty()) {
+                Toast.makeText(this, "Centang minimal 1 file hasil unpack dulu", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            pushUnpackedFilesToGithub(url, token, checkedFiles)
         }
 
         binding.btnScanGithub.setOnClickListener {
@@ -351,6 +532,179 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this@MainActivity, e.message, Toast.LENGTH_LONG).show()
             }
         }
+    }
+
+    private fun openFileEditorDialog(node: TreeNode) {
+        val repoUrl = binding.etRepoUrl.text.toString().trim()
+        val token = binding.etGithubToken.text.toString().trim()
+
+        binding.tvStatus.text = "Membuka ${node.name}..."
+        lifecycleScope.launch {
+            val initialContent = when {
+                node.cachedContent != null -> node.cachedContent!!
+                currentMode == 0 -> scanner.fetchGithubFileContent(node, token)
+                node.localUriString != null -> withContext(Dispatchers.IO) {
+                    scanner.readLocalUriText(Uri.parse(node.localUriString))
+                }
+                else -> ""
+            }
+            binding.tvStatus.text = "Mengedit: ${node.path}"
+
+            val container = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(36, 20, 36, 10)
+            }
+
+            val etCode = EditText(this@MainActivity).apply {
+                setText(initialContent)
+                typeface = Typeface.MONOSPACE
+                textSize = 12f
+                minLines = 12
+                maxLines = 22
+                setHorizontallyScrolling(true)
+            }
+
+            val etCommitMsg = EditText(this@MainActivity).apply {
+                hint = "Pesan commit (opsional)"
+                textSize = 12f
+            }
+
+            container.addView(etCode)
+            if (currentMode == 0) {
+                container.addView(etCommitMsg)
+            }
+
+            val builder = AlertDialog.Builder(this@MainActivity)
+                .setTitle(node.path)
+                .setView(container)
+                .setNegativeButton("Tutup", null)
+
+            if (currentMode == 0 && repoUrl.isNotEmpty() && token.isNotEmpty()) {
+                builder.setPositiveButton("Commit & Push") { _, _ ->
+                    val updatedCode = etCode.text.toString()
+                    val msg = etCommitMsg.text.toString()
+                    binding.tvStatus.text = "Menyimpan ${node.path} ke GitHub..."
+                    lifecycleScope.launch {
+                        try {
+                            scanner.upsertGithubFile(repoUrl, token, node.path, updatedCode, msg)
+                            node.cachedContent = updatedCode
+                            node.charCount = updatedCode.length.toLong()
+                            scanner.recalculateFolderChars(allNodes)
+                            refreshVisibleList()
+                            binding.tvStatus.text = "Berhasil commit ${node.path}!"
+                            Toast.makeText(this@MainActivity, "Tersimpan ke GitHub!", Toast.LENGTH_SHORT).show()
+                        } catch (e: Exception) {
+                            binding.tvStatus.text = "Gagal commit: ${e.message}"
+                            Toast.makeText(this@MainActivity, e.message, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+                builder.setNeutralButton("Hapus File") { _, _ ->
+                    confirmDeleteGithubFile(repoUrl, token, node)
+                }
+            }
+
+            builder.show()
+        }
+    }
+
+    private fun confirmDeleteGithubFile(repoUrl: String, token: String, node: TreeNode) {
+        AlertDialog.Builder(this)
+            .setTitle("Hapus dari GitHub?")
+            .setMessage("Yakin ingin menghapus permanen:\n${node.path}")
+            .setPositiveButton("Hapus") { _, _ ->
+                binding.tvStatus.text = "Menghapus ${node.path}..."
+                lifecycleScope.launch {
+                    try {
+                        scanner.deleteGithubFile(repoUrl, token, node.path, "Delete ${node.name}")
+                        Toast.makeText(this@MainActivity, "File dihapus dari GitHub", Toast.LENGTH_SHORT).show()
+                        scanGithub(repoUrl, token)
+                    } catch (e: Exception) {
+                        binding.tvStatus.text = "Gagal hapus: ${e.message}"
+                        Toast.makeText(this@MainActivity, e.message, Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun openNewFileDialog(repoUrl: String, token: String) {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(36, 20, 36, 10)
+        }
+
+        val etPath = EditText(this).apply {
+            hint = "Path file (contoh: app/src/main/Test.kt)"
+            textSize = 13f
+            isSingleLine = true
+        }
+
+        val etCode = EditText(this).apply {
+            hint = "Isi kode file baru..."
+            typeface = Typeface.MONOSPACE
+            textSize = 12f
+            minLines = 10
+            maxLines = 20
+        }
+
+        container.addView(etPath)
+        container.addView(etCode)
+
+        AlertDialog.Builder(this)
+            .setTitle("Buat File Baru di GitHub")
+            .setView(container)
+            .setPositiveButton("Create & Push") { _, _ ->
+                val path = etPath.text.toString().trim()
+                val code = etCode.text.toString()
+                if (path.isEmpty()) {
+                    Toast.makeText(this, "Path file wajib diisi", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                binding.tvStatus.text = "Membuat $path di GitHub..."
+                lifecycleScope.launch {
+                    try {
+                        scanner.upsertGithubFile(repoUrl, token, path, code, "Create $path")
+                        Toast.makeText(this@MainActivity, "File berhasil dibuat!", Toast.LENGTH_SHORT).show()
+                        scanGithub(repoUrl, token)
+                    } catch (e: Exception) {
+                        binding.tvStatus.text = "Gagal buat file: ${e.message}"
+                        Toast.makeText(this@MainActivity, e.message, Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun pushUnpackedFilesToGithub(repoUrl: String, token: String, files: List<TreeNode>) {
+        AlertDialog.Builder(this)
+            .setTitle("Push ${files.size} File ke GitHub?")
+            .setMessage("Target Repo:\n$repoUrl\n\nFile yang sudah ada dengan path sama akan otomatis di-update.")
+            .setPositiveButton("Push Sekarang") { _, _ ->
+                lifecycleScope.launch {
+                    try {
+                        for ((index, file) in files.withIndex()) {
+                            binding.tvStatus.text = "Push (${index + 1}/${files.size}): ${file.path}"
+                            scanner.upsertGithubFile(
+                                repoUrl = repoUrl,
+                                token = token,
+                                filePath = file.path,
+                                content = file.cachedContent ?: "",
+                                commitMessage = "Update ${file.path} via RantingPohonTools"
+                            )
+                        }
+                        binding.tvStatus.text = "Selesai! ${files.size} file berhasil di-push ke GitHub."
+                        Toast.makeText(this@MainActivity, "Berhasil push ${files.size} file!", Toast.LENGTH_LONG).show()
+                    } catch (e: Exception) {
+                        binding.tvStatus.text = "Error saat push: ${e.message}"
+                        Toast.makeText(this@MainActivity, "Gagal: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+            .setNegativeButton("Batal", null)
+            .show()
     }
 
     private fun scanGithub(url: String, token: String) {
