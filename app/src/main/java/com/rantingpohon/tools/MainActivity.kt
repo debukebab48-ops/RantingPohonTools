@@ -13,6 +13,7 @@ import android.text.TextWatcher
 import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -137,6 +138,9 @@ class MainActivity : AppCompatActivity() {
         binding.rvTree.layoutManager = LinearLayoutManager(this)
         binding.rvTree.adapter = adapter
 
+        val prefs = getSharedPreferences("ranting_pohon_prefs", Context.MODE_PRIVATE)
+        binding.etGithubToken.setText(prefs.getString("github_token", ""))
+
         setupListeners()
     }
 
@@ -169,6 +173,26 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
             extractDestinationLauncher.launch(null)
+        }
+
+        binding.etGithubToken.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                getSharedPreferences("ranting_pohon_prefs", Context.MODE_PRIVATE)
+                    .edit()
+                    .putString("github_token", s?.toString()?.trim() ?: "")
+                    .apply()
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+
+        binding.btnSelectMyRepo.setOnClickListener {
+            val token = binding.etGithubToken.text.toString().trim()
+            if (token.isEmpty()) {
+                Toast.makeText(this, "Isi GitHub Token dulu untuk memuat daftar repo", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            showMyReposDialog(token)
         }
 
         binding.btnScanGithub.setOnClickListener {
@@ -296,6 +320,37 @@ class MainActivity : AppCompatActivity() {
         refreshVisibleList()
         val fileCount = parsed.count { !it.isDirectory }
         binding.tvStatus.text = "Siap bongkar: $fileCount file ditemukan. Silakan pilih folder tujuan."
+    }
+
+    private fun showMyReposDialog(token: String) {
+        binding.tvStatus.text = "Mengambil daftar repository GitHub kamu..."
+        lifecycleScope.launch {
+            try {
+                val repos = scanner.fetchUserRepos(token)
+                if (repos.isEmpty()) {
+                    binding.tvStatus.text = "Tidak ditemukan repository pada akun ini."
+                    return@launch
+                }
+                binding.tvStatus.text = "Ditemukan ${repos.size} repository."
+                val labels = repos.map { repo ->
+                    val badge = if (repo.isPrivate) "[Privat]" else "[Publik]"
+                    "$badge ${repo.fullName}"
+                }.toTypedArray()
+
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Pilih Repository (${repos.size})")
+                    .setItems(labels) { _, which ->
+                        val selected = repos[which]
+                        binding.etRepoUrl.setText(selected.htmlUrl)
+                        scanGithub(selected.htmlUrl, token)
+                    }
+                    .setNegativeButton("Batal", null)
+                    .show()
+            } catch (e: Exception) {
+                binding.tvStatus.text = "Error: ${e.message}"
+                Toast.makeText(this@MainActivity, e.message, Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     private fun scanGithub(url: String, token: String) {
