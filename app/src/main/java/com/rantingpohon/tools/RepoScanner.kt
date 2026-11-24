@@ -448,6 +448,60 @@ class RepoScanner(private val context: Context) {
         }
     }
 
+    suspend fun fetchRunJobStepsSummary(
+        repoUrl: String,
+        token: String?,
+        runId: Long
+    ): String = withContext(Dispatchers.IO) {
+        val (owner, repo) = parseOwnerRepo(repoUrl)
+        val reqBuilder = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/actions/runs/$runId/jobs")
+            .header("Accept", "application/vnd.github+json")
+        if (!token.isNullOrBlank()) {
+            reqBuilder.header("Authorization", "Bearer ${token.trim()}")
+        }
+
+        client.newCall(reqBuilder.build()).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                return@withContext "(Progres step belum tersedia: HTTP ${resp.code})"
+            }
+            val root = JSONObject(resp.body?.string() ?: "{}")
+            val jobsArr = root.optJSONArray("jobs") ?: JSONArray()
+            if (jobsArr.length() == 0) {
+                return@withContext "Menunggu runner GitHub Actions mengalokasikan job..."
+            }
+
+            val sb = StringBuilder()
+            for (i in 0 until jobsArr.length()) {
+                val job = jobsArr.getJSONObject(i)
+                val jName = job.optString("name", "job")
+                val jStatus = job.optString("status", "queued")
+                val jConclusion = job.optString("conclusion", "")
+                val stateLabel = if (jConclusion.isNotEmpty() && jConclusion != "null") "$jStatus/$jConclusion" else jStatus
+                sb.append("Job: $jName ($stateLabel)\n")
+
+                val stepsArr = job.optJSONArray("steps") ?: JSONArray()
+                for (s in 0 until stepsArr.length()) {
+                    val step = stepsArr.getJSONObject(s)
+                    val sName = step.optString("name", "Step")
+                    val sStatus = step.optString("status", "queued")
+                    val sConclusion = step.optString("conclusion", "")
+                    val icon = when {
+                        sStatus == "in_progress" -> "⏳"
+                        sConclusion == "success" -> "✅"
+                        sConclusion == "failure" -> "❌"
+                        sConclusion == "skipped" -> "⏭️"
+                        else -> "•"
+                    }
+                    val detail = if (sConclusion.isNotEmpty() && sConclusion != "null") "$sStatus/$sConclusion" else sStatus
+                    sb.append("  $icon $sName [$detail]\n")
+                }
+                sb.append("\n")
+            }
+            sb.toString().trim()
+        }
+    }
+
     suspend fun fetchRunFailureLog(
         repoUrl: String,
         token: String,

@@ -470,7 +470,13 @@ class GithubStudioActivity : AppCompatActivity() {
                     if (it.conclusion.isNotEmpty()) "${it.status}/${it.conclusion}" else it.status
                 } ?: run.status
 
-                val logText = scanner.fetchRunFailureLog(activeRepoUrl, token, run.id)
+                val rawLog = scanner.fetchRunFailureLog(activeRepoUrl, token, run.id)
+                val logText = if (rawLog.contains("HTTP 404") || rawLog.contains("Belum ada job")) {
+                    val stepsSummary = scanner.fetchRunJobStepsSummary(activeRepoUrl, token, run.id)
+                    "$stepsSummary\n\n$rawLog"
+                } else {
+                    rawLog
+                }
                 latestLog = logText
                 tvLog.text = logText
                 dialog.setTitle("Live Log #${run.id} ($statusLabel)")
