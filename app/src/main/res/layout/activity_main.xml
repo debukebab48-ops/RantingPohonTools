@@ -24,26 +24,40 @@
             android:textSize="17sp"
             android:textStyle="bold" />
 
+        <Button
+            android:id="@+id/btnOpenGithubStudio"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:backgroundTint="#8957E5"
+            android:minWidth="0dp"
+            android:paddingHorizontal="10dp"
+            android:text="Repo Studio"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
         <TextView
             android:id="@+id/tvTotalChars"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
             android:background="#21262D"
-            android:paddingHorizontal="10dp"
+            android:paddingHorizontal="8dp"
             android:paddingVertical="4dp"
             android:text="0 karakter"
             android:textColor="#3FB950"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:textStyle="bold" />
 
         <Button
             android:id="@+id/btnResetAll"
             android:layout_width="wrap_content"
             android:layout_height="32dp"
-            android:layout_marginStart="8dp"
+            android:layout_marginStart="6dp"
             android:backgroundTint="#DA3633"
             android:minWidth="0dp"
-            android:paddingHorizontal="10dp"
+            android:paddingHorizontal="8dp"
             android:text="Reset"
             android:textAllCaps="false"
             android:textColor="#FFFFFF"
@@ -165,18 +179,6 @@
                 android:textAllCaps="false"
                 android:textColor="#FFFFFF"
                 android:textSize="12sp" />
-
-            <Button
-                android:id="@+id/btnNewGithubFile"
-                android:layout_width="wrap_content"
-                android:layout_height="38dp"
-                android:layout_marginStart="6dp"
-                android:backgroundTint="#238636"
-                android:text="+ File"
-                android:textAllCaps="false"
-                android:textColor="#FFFFFF"
-                android:textSize="12sp"
-                android:textStyle="bold" />
         </LinearLayout>
     </LinearLayout>
 
