@@ -23,6 +23,25 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Ensure Consistent Debug Keystore
+        run: |
+          if [ ! -f app/debug-consistent.keystore ]; then
+            keytool -genkeypair -v \
+              -keystore app/debug-consistent.keystore \
+              -storepass rantingpohon \
+              -alias rantingkey \
+              -keypass rantingpohon \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=RantingPohon, OU=Dev, O=RantingPohon, L=ID, S=ID, C=ID"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add app/debug-consistent.keystore
+            git commit -m "Add consistent debug keystore [skip ci]"
+            git push
+          fi
+
       - name: Build APK
         run: gradle assembleDebug
 
