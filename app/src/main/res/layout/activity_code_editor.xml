@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/editorRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#1E1E1E"
+    android:orientation="vertical">
+
+    <!-- Top Toolbar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:background="#252526"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="8dp">
+
+        <Button
+            android:id="@+id/btnEditorBack"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
+            android:backgroundTint="#333333"
+            android:padding="0dp"
+            android:text="←"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="8dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tvEditorFileName"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="start"
+                android:singleLine="true"
+                android:text="MainActivity.kt"
+                android:textColor="#E6EDF3"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvEditorInfo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="UTF-8 • Siap"
+                android:textColor="#8B949E"
+                android:textSize="10sp" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnToggleFindPanel"
+            android:layout_width="wrap_content"
+            android:layout_height="34dp"
+            android:layout_marginEnd="6dp"
+            android:backgroundTint="#333333"
+            android:minWidth="0dp"
+            android:paddingHorizontal="10dp"
+            android:text="Cari/Ganti"
+            android:textAllCaps="false"
+            android:textColor="#E6EDF3"
+            android:textSize="11sp" />
+
+        <Button
+            android:id="@+id/btnEditorCommit"
+            android:layout_width="wrap_content"
+            android:layout_height="34dp"
+            android:backgroundTint="#238636"
+            android:minWidth="0dp"
+            android:paddingHorizontal="12dp"
+            android:text="Commit"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Area Editor Kode + Nomor Baris -->
+    <ScrollView
+        android:id="@+id/svCodeEditor"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/tvLineNumbers"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:background="#252526"
+                android:fontFamily="monospace"
+                android:gravity="end"
+                android:lineSpacingMultiplier="1.15"
+                android:minWidth="38dp"
+                android:paddingHorizontal="6dp"
+                android:paddingVertical="8dp"
+                android:text="1"
+                android:textColor="#6E7681"
+                android:textSize="12sp" />
+
+            <HorizontalScrollView
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:fillViewport="true">
+
+                <EditText
+                    android:id="@+id/etCodeEditor"
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:background="@android:color/transparent"
+                    android:fontFamily="monospace"
+                    android:gravity="top|start"
+                    android:inputType="textMultiLine|textNoSuggestions"
+                    android:lineSpacingMultiplier="1.15"
+                    android:minWidth="360dp"
+                    android:padding="8dp"
+                    android:scrollHorizontally="true"
+                    android:textColor="#D4D4D4"
+                    android:textSize="12sp" />
+            </HorizontalScrollView>
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- Bar Shortcut Simbol Cepat -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="34dp"
+        android:background="#2D2D30"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/symbolBar"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="4dp" />
+    </HorizontalScrollView>
+
+    <!-- Panel Menemukan & Mengganti (Gaya QuickEdit) -->
+    <LinearLayout
+        android:id="@+id/panelFindReplace"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#252526"
+        android:orientation="vertical"
+        android:paddingHorizontal="10dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="8dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/tvMatchCounter"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Hasil: 0"
+                android:textColor="#8B949E"
+                android:textSize="11sp" />
+
+            <Button
+                android:id="@+id/btnDeleteThisFile"
+                android:layout_width="wrap_content"
+                android:layout_height="28dp"
+                android:backgroundTint="#DA3633"
+                android:minWidth="0dp"
+                android:paddingHorizontal="8dp"
+                android:text="Hapus File Ini"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFF"
+                android:textSize="10sp" />
+        </LinearLayout>
+
+        <EditText
+            android:id="@+id/etFindText"
+            android:layout_width="match_parent"
+            android:layout_height="38dp"
+            android:layout_marginTop="4dp"
+            android:background="#1E1E1E"
+            android:hint="Menemukan"
+            android:paddingHorizontal="10dp"
+            android:singleLine="true"
+            android:textColor="#E6EDF3"
+            android:textColorHint="#6E7681"
+            android:textSize="13sp" />
+
+        <EditText
+            android:id="@+id/etReplaceText"
+            android:layout_width="match_parent"
+            android:layout_height="38dp"
+            android:layout_marginTop="4dp"
+            android:background="#1E1E1E"
+            android:hint="Mengganti"
+            android:paddingHorizontal="10dp"
+            android:singleLine="true"
+            android:textColor="#E6EDF3"
+            android:textColorHint="#6E7681"
+            android:textSize="13sp" />
+
+        <!-- 4 Tombol Aksi Bawah -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="36dp"
+            android:layout_marginTop="6dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnFindPrev"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1.15"
+                android:background="@android:color/transparent"
+                android:padding="0dp"
+                android:text="SEBELUMNYA"
+                android:textColor="#58A6FF"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btnFindNext"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="0.9"
+                android:background="@android:color/transparent"
+                android:padding="0dp"
+                android:text="LANJUT"
+                android:textColor="#58A6FF"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btnReplaceStep"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1.1"
+                android:background="@android:color/transparent"
+                android:padding="0dp"
+                android:text="MENGGANTI"
+                android:textColor="#3FB950"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btnReplaceAll"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="0.85"
+                android:background="@android:color/transparent"
+                android:padding="0dp"
+                android:text="SEMUA"
+                android:textColor="#58A6FF"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>
