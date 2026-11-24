@@ -176,14 +176,18 @@
             <Button
                 android:id="@+id/btnDeleteThisFile"
                 android:layout_width="wrap_content"
-                android:layout_height="28dp"
+                android:layout_height="30dp"
                 android:backgroundTint="#DA3633"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
                 android:minWidth="0dp"
-                android:paddingHorizontal="8dp"
+                android:minHeight="0dp"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="0dp"
                 android:text="Hapus File Ini"
                 android:textAllCaps="false"
                 android:textColor="#FFFFFF"
-                android:textSize="10sp" />
+                android:textSize="11sp" />
         </LinearLayout>
 
         <EditText
