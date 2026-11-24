@@ -11,8 +11,21 @@ android {
         applicationId = "com.rantingpohon.tools"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        val ciRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionCode = ciRunNumber
+        versionName = "1.0.$ciRunNumber"
+    }
+
+    signingConfigs {
+        getByName("debug") {
+            val ksFile = file("debug-consistent.keystore")
+            if (ksFile.exists()) {
+                storeFile = ksFile
+                storePassword = "rantingpohon"
+                keyAlias = "rantingkey"
+                keyPassword = "rantingpohon"
+            }
+        }
     }
 
     buildTypes {
