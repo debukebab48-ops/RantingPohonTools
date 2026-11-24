@@ -27,7 +27,6 @@ class GithubStudioActivity : AppCompatActivity() {
     private var allNodes: List<TreeNode> = emptyList()
     private var activeRepoUrl: String = ""
     private var activeBranch: String = ""
-    private var activeBranch: String = ""
 
     private val editorLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -130,8 +129,6 @@ class GithubStudioActivity : AppCompatActivity() {
                         putExtra("is_new_file", true)
                         putExtra("branch", activeBranch)
                     }
-
-                        }
                         editorLauncher.launch(intent)
                     }
                 }
