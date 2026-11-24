@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Typeface
+import android.view.View
 import android.widget.ScrollView
 import android.widget.TextView
 import kotlinx.coroutines.Job
