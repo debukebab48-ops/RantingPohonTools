@@ -8,6 +8,9 @@ import android.content.Intent
 import android.graphics.Typeface
 import android.widget.ScrollView
 import android.widget.TextView
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -431,37 +434,74 @@ class GithubStudioActivity : AppCompatActivity() {
 
     private fun showRunLogDialog(token: String, run: WorkflowRunItem) {
         binding.tvStudioStatus.text = "Mengambil log build..."
-        lifecycleScope.launch {
-            try {
+        var latestLog = "Memuat log..."
+
+        val tvLog = TextView(this@GithubStudioActivity).apply {
+            text = latestLog
+            textSize = 11f
+            typeface = Typeface.MONOSPACE
+            setPadding(32, 24, 32, 24)
+            setTextIsSelectable(true)
+        }
+        val scroll = ScrollView(this@GithubStudioActivity).apply {
+            addView(tvLog)
+        }
+
+        val dialog = AlertDialog.Builder(this@GithubStudioActivity)
+            .setTitle("Live Log #${run.id} (${run.status})")
+            .setView(scroll)
+            .setPositiveButton("Salin Log") { _, _ ->
+                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("build_log", latestLog))
+                Toast.makeText(this@GithubStudioActivity, "Log disalin ke clipboard", Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton("Refresh", null)
+            .setNegativeButton("Tutup", null)
+            .create()
+
+        var pollJob: Job? = null
+
+        suspend fun refreshOnce(): Boolean {
+            return try {
+                val runsNow = scanner.fetchWorkflowRuns(activeRepoUrl, token, activeBranch)
+                val currentRun = runsNow.firstOrNull { it.id == run.id }
+                val statusLabel = currentRun?.let {
+                    if (it.conclusion.isNotEmpty()) "${it.status}/${it.conclusion}" else it.status
+                } ?: run.status
+
                 val logText = scanner.fetchRunFailureLog(activeRepoUrl, token, run.id)
-                binding.tvStudioStatus.text = "Log build siap."
+                latestLog = logText
+                tvLog.text = logText
+                dialog.setTitle("Live Log #${run.id} ($statusLabel)")
+                binding.tvStudioStatus.text = "Log #${run.id} [$statusLabel]"
+                scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
 
-                val tvLog = TextView(this@GithubStudioActivity).apply {
-                    text = logText
-                    textSize = 11f
-                    typeface = Typeface.MONOSPACE
-                    setPadding(32, 24, 32, 24)
-                    setTextIsSelectable(true)
-                }
-                val scroll = ScrollView(this@GithubStudioActivity).apply {
-                    addView(tvLog)
-                }
-
-                AlertDialog.Builder(this@GithubStudioActivity)
-                    .setTitle("Log Build #${run.id}")
-                    .setView(scroll)
-                    .setPositiveButton("Salin Log") { _, _ ->
-                        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        cm.setPrimaryClip(ClipData.newPlainText("build_log", logText))
-                        Toast.makeText(this@GithubStudioActivity, "Log disalin ke clipboard", Toast.LENGTH_SHORT).show()
-                    }
-                    .setNegativeButton("Tutup", null)
-                    .show()
+                val stillRunning = currentRun == null || currentRun.status != "completed"
+                stillRunning
             } catch (e: Exception) {
                 binding.tvStudioStatus.text = "Gagal ambil log: ${e.message}"
-                Toast.makeText(this@GithubStudioActivity, e.message, Toast.LENGTH_LONG).show()
+                false
             }
         }
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setOnClickListener {
+                lifecycleScope.launch { refreshOnce() }
+            }
+            pollJob = lifecycleScope.launch {
+                while (isActive && dialog.isShowing) {
+                    val keepPolling = refreshOnce()
+                    if (!keepPolling) break
+                    delay(3000L)
+                }
+            }
+        }
+
+        dialog.setOnDismissListener {
+            pollJob?.cancel()
+        }
+
+        dialog.show()
     }
 
     private fun pickAndDownloadArtifact(token: String, run: WorkflowRunItem) {

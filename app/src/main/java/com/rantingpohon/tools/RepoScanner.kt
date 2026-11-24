@@ -491,7 +491,7 @@ class RepoScanner(private val context: Context) {
                 }
             }
 
-            if (jConclusion == "failure" || targetJobId == -1L) {
+            if (jConclusion == "failure" || job.optString("status") == "in_progress" || targetJobId == -1L) {
                 targetJobId = jId
                 targetJobName = jName
             }
@@ -522,9 +522,9 @@ class RepoScanner(private val context: Context) {
         }
 
         val snippet = if (errorLines.isNotEmpty()) {
-            errorLines.takeLast(60).joinToString("\n")
+            errorLines.takeLast(80).joinToString("\n")
         } else {
-            lines.takeLast(60).joinToString("\n")
+            lines.takeLast(80).joinToString("\n")
         }
 
         "$summary\n--- Log ($targetJobName) ---\n$snippet"
