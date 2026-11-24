@@ -43,6 +43,13 @@ data class WorkflowArtifactItem(
     val expired: Boolean
 )
 
+data class GithubCommitItem(
+    val sha: String,
+    val message: String,
+    val authorName: String,
+    val dateIso: String
+)
+
 class RepoScanner(private val context: Context) {
 
     private val client = OkHttpClient()
@@ -636,6 +643,47 @@ class RepoScanner(private val context: Context) {
                 FileOutputStream(outFile).use { it.write(finalBytes) }
                 outFile.absolutePath
             }
+        }
+    }
+
+    suspend fun fetchRepoCommits(
+        repoUrl: String,
+        token: String?,
+        branch: String? = null
+    ): List<GithubCommitItem> = withContext(Dispatchers.IO) {
+        val (owner, repo) = parseOwnerRepo(repoUrl)
+        val shaQuery = if (!branch.isNullOrBlank()) "&sha=${Uri.encode(branch.trim())}" else ""
+        val reqBuilder = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/commits?per_page=20$shaQuery")
+            .header("Accept", "application/vnd.github+json")
+        if (!token.isNullOrBlank()) {
+            reqBuilder.header("Authorization", "Bearer ${token.trim()}")
+        }
+
+        client.newCall(reqBuilder.build()).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                throw Exception("Gagal memuat riwayat commit (${resp.code}).")
+            }
+            val arr = JSONArray(resp.body?.string() ?: "[]")
+            val commits = mutableListOf<GithubCommitItem>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                val sha = obj.optString("sha", "")
+                val commitObj = obj.optJSONObject("commit")
+                val msg = commitObj?.optString("message", "(Tanpa pesan)") ?: "(Tanpa pesan)"
+                val authorObj = commitObj?.optJSONObject("author")
+                val author = authorObj?.optString("name", "Unknown") ?: "Unknown"
+                val date = authorObj?.optString("date", "") ?: ""
+                commits.add(
+                    GithubCommitItem(
+                        sha = sha,
+                        message = msg,
+                        authorName = author,
+                        dateIso = date
+                    )
+                )
+            }
+            commits
         }
     }
 

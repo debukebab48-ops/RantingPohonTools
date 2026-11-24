@@ -168,6 +168,15 @@ class GithubStudioActivity : AppCompatActivity() {
             openActionsMonitorDialog(token)
         }
 
+        binding.btnStudioCommits.setOnClickListener {
+            val token = binding.etStudioToken.text.toString().trim()
+            if (activeRepoUrl.isEmpty()) {
+                Toast.makeText(this, "Pilih repository dulu", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            openCommitHistoryDialog(token)
+        }
+
         binding.etStudioSearch.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
@@ -490,6 +499,51 @@ class GithubStudioActivity : AppCompatActivity() {
                     .show()
             } catch (e: Exception) {
                 binding.tvStudioStatus.text = "Error artifact: ${e.message}"
+                Toast.makeText(this@GithubStudioActivity, e.message, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun openCommitHistoryDialog(token: String) {
+        binding.tvStudioStatus.text = "Memuat riwayat commit..."
+        lifecycleScope.launch {
+            try {
+                val commits = scanner.fetchRepoCommits(activeRepoUrl, token, activeBranch)
+                if (commits.isEmpty()) {
+                    binding.tvStudioStatus.text = "Belum ada riwayat commit."
+                    Toast.makeText(this@GithubStudioActivity, "Riwayat commit kosong", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                binding.tvStudioStatus.text = "Menampilkan ${commits.size} commit terakhir ($activeBranch)."
+
+                val labels = commits.map { c ->
+                    val shortSha = c.sha.take(7)
+                    val firstLine = c.message.lineSequence().firstOrNull()?.take(50) ?: "(Tanpa pesan)"
+                    val cleanTime = c.dateIso.replace("T", " ").removeSuffix("Z")
+                    "[$shortSha] $firstLine\n${c.authorName} • $cleanTime"
+                }.toTypedArray()
+
+                AlertDialog.Builder(this@GithubStudioActivity)
+                    .setTitle("Riwayat Commit ($activeBranch)")
+                    .setItems(labels) { _, which ->
+                        val chosen = commits[which]
+                        val cleanTime = chosen.dateIso.replace("T", " ").removeSuffix("Z")
+                        val detail = "SHA: ${chosen.sha}\nPenulis: ${chosen.authorName}\nWaktu: $cleanTime UTC\n\nPesan:\n${chosen.message}"
+                        AlertDialog.Builder(this@GithubStudioActivity)
+                            .setTitle("Detail Commit ${chosen.sha.take(7)}")
+                            .setMessage(detail)
+                            .setPositiveButton("Salin SHA") { _, _ ->
+                                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                cm.setPrimaryClip(ClipData.newPlainText("commit_sha", chosen.sha))
+                                Toast.makeText(this@GithubStudioActivity, "SHA disalin", Toast.LENGTH_SHORT).show()
+                            }
+                            .setNegativeButton("Tutup", null)
+                            .show()
+                    }
+                    .setNegativeButton("Tutup", null)
+                    .show()
+            } catch (e: Exception) {
+                binding.tvStudioStatus.text = "Error commit: ${e.message}"
                 Toast.makeText(this@GithubStudioActivity, e.message, Toast.LENGTH_LONG).show()
             }
         }
