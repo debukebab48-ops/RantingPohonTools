@@ -75,7 +75,40 @@ class RepoScanner(private val context: Context) {
         }
     }
 
-    suspend fun scanGithubRepo(repoUrl: String, token: String?): List<TreeNode> = withContext(Dispatchers.IO) {
+    suspend fun fetchDefaultBranch(repoUrl: String, token: String?): String = withContext(Dispatchers.IO) {
+        val (owner, repo) = parseOwnerRepo(repoUrl)
+        val reqBuilder = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo")
+            .header("Accept", "application/vnd.github+json")
+        if (!token.isNullOrBlank()) {
+            reqBuilder.header("Authorization", "Bearer ${token.trim()}")
+        }
+        client.newCall(reqBuilder.build()).execute().use { resp ->
+            if (!resp.isSuccessful) throw Exception("Gagal akses repo (${resp.code}).")
+            JSONObject(resp.body?.string() ?: "{}").optString("default_branch", "main")
+        }
+    }
+
+    suspend fun fetchRepoBranches(repoUrl: String, token: String?): List<String> = withContext(Dispatchers.IO) {
+        val (owner, repo) = parseOwnerRepo(repoUrl)
+        val reqBuilder = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/branches?per_page=100")
+            .header("Accept", "application/vnd.github+json")
+        if (!token.isNullOrBlank()) {
+            reqBuilder.header("Authorization", "Bearer ${token.trim()}")
+        }
+        client.newCall(reqBuilder.build()).execute().use { resp ->
+            if (!resp.isSuccessful) throw Exception("Gagal memuat branch (${resp.code}).")
+            val arr = JSONArray(resp.body?.string() ?: "[]")
+            val branches = mutableListOf<String>()
+            for (i in 0 until arr.length()) {
+                branches.add(arr.getJSONObject(i).getString("name"))
+            }
+            branches
+        }
+    }
+
+    suspend fun scanGithubRepo(repoUrl: String, token: String?, branch: String? = null): List<TreeNode> = withContext(Dispatchers.IO) {
         val cleanUrl = repoUrl.trim().removeSuffix("/").removeSuffix(".git")
         val regex = Regex("github\\.com/([^/]+)/([^/]+)")
         val match = regex.find(cleanUrl)
@@ -95,10 +128,10 @@ class RepoScanner(private val context: Context) {
             if (!resp.isSuccessful) throw Exception("Gagal akses repo (${resp.code}). Cek URL atau Token.")
             JSONObject(resp.body?.string() ?: "{}")
         }
-        val defaultBranch = repoJson.optString("default_branch", "main")
+        val defaultBranch = if (!branch.isNullOrBlank()) branch.trim() else repoJson.optString("default_branch", "main")
 
         val treeReqBuilder = Request.Builder()
-            .url("https://api.github.com/repos/$owner/$repo/git/trees/$defaultBranch?recursive=1")
+            .url("https://api.github.com/repos/$owner/$repo/git/trees/${Uri.encode(defaultBranch)}?recursive=1")
             .header("Accept", "application/vnd.github+json")
         if (!token.isNullOrBlank()) {
             treeReqBuilder.header("Authorization", "Bearer ${token.trim()}")
@@ -162,10 +195,11 @@ class RepoScanner(private val context: Context) {
         return match.groupValues[1] to match.groupValues[2]
     }
 
-    private fun getFileShaIfExists(owner: String, repo: String, filePath: String, token: String): String? {
+    private fun getFileShaIfExists(owner: String, repo: String, filePath: String, token: String, branch: String? = null): String? {
         val cleanPath = filePath.trimStart('/')
+        val refQuery = if (!branch.isNullOrBlank()) "?ref=${Uri.encode(branch.trim())}" else ""
         val req = Request.Builder()
-            .url("https://api.github.com/repos/$owner/$repo/contents/$cleanPath")
+            .url("https://api.github.com/repos/$owner/$repo/contents/$cleanPath$refQuery")
             .header("Accept", "application/vnd.github+json")
             .header("Authorization", "Bearer ${token.trim()}")
             .build()
@@ -181,7 +215,8 @@ class RepoScanner(private val context: Context) {
         token: String,
         filePath: String,
         content: String,
-        commitMessage: String
+        commitMessage: String,
+        branch: String? = null
     ) = withContext(Dispatchers.IO) {
         val cleanToken = token.trim()
         if (cleanToken.isEmpty()) throw IllegalArgumentException("GitHub Token wajib diisi untuk mengubah repo.")
@@ -189,13 +224,14 @@ class RepoScanner(private val context: Context) {
         val cleanPath = filePath.trim().trimStart('/')
         if (cleanPath.isEmpty()) throw IllegalArgumentException("Path file tidak boleh kosong.")
 
-        val existingSha = getFileShaIfExists(owner, repo, cleanPath, cleanToken)
+        val existingSha = getFileShaIfExists(owner, repo, cleanPath, cleanToken, branch)
         val encodedContent = Base64.encodeToString(content.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
 
         val payload = JSONObject().apply {
             put("message", commitMessage.ifBlank { "Update $cleanPath via RantingPohonTools" })
             put("content", encodedContent)
             if (existingSha != null) put("sha", existingSha)
+            if (!branch.isNullOrBlank()) put("branch", branch.trim())
         }
 
         val req = Request.Builder()
@@ -217,19 +253,21 @@ class RepoScanner(private val context: Context) {
         repoUrl: String,
         token: String,
         filePath: String,
-        commitMessage: String
+        commitMessage: String,
+        branch: String? = null
     ) = withContext(Dispatchers.IO) {
         val cleanToken = token.trim()
         if (cleanToken.isEmpty()) throw IllegalArgumentException("GitHub Token wajib diisi.")
         val (owner, repo) = parseOwnerRepo(repoUrl)
         val cleanPath = filePath.trim().trimStart('/')
 
-        val sha = getFileShaIfExists(owner, repo, cleanPath, cleanToken)
+        val sha = getFileShaIfExists(owner, repo, cleanPath, cleanToken, branch)
             ?: throw Exception("File tidak ditemukan di GitHub atau sudah terhapus.")
 
         val payload = JSONObject().apply {
             put("message", commitMessage.ifBlank { "Delete $cleanPath via RantingPohonTools" })
             put("sha", sha)
+            if (!branch.isNullOrBlank()) put("branch", branch.trim())
         }
 
         val req = Request.Builder()
@@ -242,6 +280,99 @@ class RepoScanner(private val context: Context) {
         client.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) {
                 throw Exception("Gagal menghapus file (${resp.code}).")
+            }
+        }
+    }
+
+    suspend fun renameOrMoveGithubFile(
+        repoUrl: String,
+        token: String,
+        oldPath: String,
+        newPath: String,
+        branch: String? = null
+    ) = withContext(Dispatchers.IO) {
+        val cleanToken = token.trim()
+        if (cleanToken.isEmpty()) throw IllegalArgumentException("GitHub Token wajib diisi.")
+        val (owner, repo) = parseOwnerRepo(repoUrl)
+        val cleanOld = oldPath.trim().trimStart('/')
+        val cleanNew = newPath.trim().trimStart('/')
+        if (cleanOld.isEmpty() || cleanNew.isEmpty()) {
+            throw IllegalArgumentException("Path file lama dan baru tidak boleh kosong.")
+        }
+        if (cleanOld == cleanNew) {
+            throw IllegalArgumentException("Path baru sama dengan path lama.")
+        }
+
+        val targetExists = getFileShaIfExists(owner, repo, cleanNew, cleanToken, branch)
+        if (targetExists != null) {
+            throw Exception("File tujuan sudah ada: $cleanNew")
+        }
+
+        val refQuery = if (!branch.isNullOrBlank()) "?ref=${Uri.encode(branch.trim())}" else ""
+        val getReq = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/contents/$cleanOld$refQuery")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .build()
+
+        val (oldSha, base64Content) = client.newCall(getReq).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                throw Exception("Gagal membaca file asal (${resp.code}).")
+            }
+            val json = JSONObject(resp.body?.string() ?: "{}")
+            val sha = json.getString("sha")
+            val rawBase64 = json.optString("content", "").replace("\n", "").replace("\r", "")
+            val finalBase64 = if (rawBase64.isNotEmpty()) {
+                rawBase64
+            } else {
+                val dlUrl = json.optString("download_url", "")
+                if (dlUrl.isEmpty()) throw Exception("Konten file kosong atau tidak terbaca.")
+                val dlReq = Request.Builder().url(dlUrl)
+                    .header("Authorization", "Bearer $cleanToken")
+                    .build()
+                client.newCall(dlReq).execute().use { dlResp ->
+                    if (!dlResp.isSuccessful) throw Exception("Gagal mengunduh konten file (${dlResp.code}).")
+                    val bytes = dlResp.body?.bytes() ?: ByteArray(0)
+                    Base64.encodeToString(bytes, Base64.NO_WRAP)
+                }
+            }
+            sha to finalBase64
+        }
+
+        val createPayload = JSONObject().apply {
+            put("message", "Rename $cleanOld to $cleanNew via RantingPohonTools")
+            put("content", base64Content)
+            if (!branch.isNullOrBlank()) put("branch", branch.trim())
+        }
+        val putReq = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/contents/$cleanNew")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .put(createPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .build()
+
+        client.newCall(putReq).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                val errBody = resp.body?.string() ?: ""
+                throw Exception("Gagal membuat file tujuan (${resp.code}): $errBody")
+            }
+        }
+
+        val delPayload = JSONObject().apply {
+            put("message", "Remove old path $cleanOld via RantingPohonTools")
+            put("sha", oldSha)
+            if (!branch.isNullOrBlank()) put("branch", branch.trim())
+        }
+        val delReq = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/contents/$cleanOld")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .delete(delPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .build()
+
+        client.newCall(delReq).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                throw Exception("File baru terbuat, tapi gagal hapus file lama (${resp.code}).")
             }
         }
     }

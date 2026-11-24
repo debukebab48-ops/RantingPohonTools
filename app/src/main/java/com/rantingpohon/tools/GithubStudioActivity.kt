@@ -26,6 +26,8 @@ class GithubStudioActivity : AppCompatActivity() {
 
     private var allNodes: List<TreeNode> = emptyList()
     private var activeRepoUrl: String = ""
+    private var activeBranch: String = ""
+    private var activeBranch: String = ""
 
     private val editorLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -68,6 +70,10 @@ class GithubStudioActivity : AppCompatActivity() {
         val prefs = getSharedPreferences("ranting_pohon_prefs", Context.MODE_PRIVATE)
         binding.etStudioToken.setText(prefs.getString("github_token", ""))
         val savedRepo = prefs.getString("studio_active_repo", "") ?: ""
+        activeBranch = prefs.getString("studio_active_branch", "") ?: ""
+        if (activeBranch.isNotEmpty()) {
+            binding.btnStudioBranch.text = "Branch: $activeBranch"
+        }
         if (savedRepo.isNotEmpty()) {
             activeRepoUrl = savedRepo
             binding.tvActiveRepo.text = savedRepo
@@ -121,13 +127,34 @@ class GithubStudioActivity : AppCompatActivity() {
                             putExtra("token", token)
                             putExtra("file_path", path)
                             putExtra("content", "")
-                            putExtra("is_new_file", true)
+                        putExtra("is_new_file", true)
+                        putExtra("branch", activeBranch)
+                    }
+
                         }
                         editorLauncher.launch(intent)
                     }
                 }
                 .setNegativeButton("Batal", null)
                 .show()
+        }
+
+        binding.btnStudioBranch.setOnClickListener {
+            val token = binding.etStudioToken.text.toString().trim()
+            if (activeRepoUrl.isEmpty() || token.isEmpty()) {
+                Toast.makeText(this, "Pilih repository & isi token dulu", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            pickBranchDialog(token)
+        }
+
+        binding.btnStudioRename.setOnClickListener {
+            val token = binding.etStudioToken.text.toString().trim()
+            if (activeRepoUrl.isEmpty() || token.isEmpty()) {
+                Toast.makeText(this, "Pilih repository & isi token dulu", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            startRenameOrMoveFlow(token)
         }
 
         binding.etStudioSearch.addTextChangedListener(object : TextWatcher {
@@ -157,10 +184,13 @@ class GithubStudioActivity : AppCompatActivity() {
                     .setItems(labels) { _, which ->
                         val chosen = repos[which].htmlUrl
                         activeRepoUrl = chosen
+                        activeBranch = ""
+                        binding.btnStudioBranch.text = "Branch: -"
                         binding.tvActiveRepo.text = chosen
                         getSharedPreferences("ranting_pohon_prefs", Context.MODE_PRIVATE)
                             .edit()
                             .putString("studio_active_repo", chosen)
+                            .remove("studio_active_branch")
                             .apply()
                         loadRepoTree(chosen)
                     }
@@ -178,9 +208,17 @@ class GithubStudioActivity : AppCompatActivity() {
         binding.tvStudioStatus.text = "Memuat isi repository..."
         lifecycleScope.launch {
             try {
-                allNodes = scanner.scanGithubRepo(repoUrl, token)
+                if (activeBranch.isEmpty()) {
+                    activeBranch = scanner.fetchDefaultBranch(repoUrl, token)
+                    getSharedPreferences("ranting_pohon_prefs", Context.MODE_PRIVATE)
+                        .edit()
+                        .putString("studio_active_branch", activeBranch)
+                        .apply()
+                }
+                binding.btnStudioBranch.text = "Branch: $activeBranch"
+                allNodes = scanner.scanGithubRepo(repoUrl, token, activeBranch)
                 refreshList()
-                binding.tvStudioStatus.text = "Siap: ${allNodes.size} item. Ketuk file untuk mengedit."
+                binding.tvStudioStatus.text = "Siap ($activeBranch): ${allNodes.size} item. Ketuk file untuk mengedit."
             } catch (e: Exception) {
                 binding.tvStudioStatus.text = "Gagal memuat: ${e.message}"
             }
@@ -199,9 +237,103 @@ class GithubStudioActivity : AppCompatActivity() {
                 putExtra("file_path", node.path)
                 putExtra("content", content)
                 putExtra("is_new_file", false)
+                putExtra("branch", activeBranch)
             }
             editorLauncher.launch(intent)
         }
+    }
+
+    private fun pickBranchDialog(token: String) {
+        binding.tvStudioStatus.text = "Memuat daftar branch..."
+        lifecycleScope.launch {
+            try {
+                val branches = scanner.fetchRepoBranches(activeRepoUrl, token)
+                if (branches.isEmpty()) {
+                    binding.tvStudioStatus.text = "Branch tidak ditemukan."
+                    return@launch
+                }
+                val labels = branches.map {
+                    if (it == activeBranch) "✓ $it (aktif)" else it
+                }.toTypedArray()
+
+                AlertDialog.Builder(this@GithubStudioActivity)
+                    .setTitle("Pilih Branch (${branches.size})")
+                    .setItems(labels) { _, which ->
+                        val chosenBranch = branches[which]
+                        activeBranch = chosenBranch
+                        binding.btnStudioBranch.text = "Branch: $chosenBranch"
+                        getSharedPreferences("ranting_pohon_prefs", Context.MODE_PRIVATE)
+                            .edit()
+                            .putString("studio_active_branch", chosenBranch)
+                            .apply()
+                        loadRepoTree(activeRepoUrl)
+                    }
+                    .setNegativeButton("Batal", null)
+                    .show()
+            } catch (e: Exception) {
+                binding.tvStudioStatus.text = "Error branch: ${e.message}"
+                Toast.makeText(this@GithubStudioActivity, e.message, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun startRenameOrMoveFlow(token: String) {
+        val fileNodes = allNodes.filter { !it.isDirectory }
+        if (fileNodes.isEmpty()) {
+            Toast.makeText(this, "Tidak ada file di repository ini", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val checkedFiles = fileNodes.filter { it.isChecked }
+        if (checkedFiles.size == 1) {
+            showRenameInputDialog(token, checkedFiles[0].path)
+            return
+        }
+        val paths = fileNodes.map { it.path }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Pilih File untuk Rename / Pindah")
+            .setItems(paths) { _, which ->
+                showRenameInputDialog(token, paths[which])
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun showRenameInputDialog(token: String, oldPath: String) {
+        val etNewPath = EditText(this).apply {
+            setText(oldPath)
+            setSelection(oldPath.length)
+            isSingleLine = true
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Rename / Pindah File")
+            .setMessage("Path lama:\n$oldPath\n\nUbah nama file atau path folder tujuan:")
+            .setView(etNewPath)
+            .setPositiveButton("Simpan") { _, _ ->
+                val newPath = etNewPath.text.toString().trim()
+                if (newPath.isEmpty() || newPath == oldPath) {
+                    Toast.makeText(this, "Path baru tidak valid atau masih sama", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                binding.tvStudioStatus.text = "Memindahkan $oldPath -> $newPath..."
+                lifecycleScope.launch {
+                    try {
+                        scanner.renameOrMoveGithubFile(
+                            repoUrl = activeRepoUrl,
+                            token = token,
+                            oldPath = oldPath,
+                            newPath = newPath,
+                            branch = activeBranch
+                        )
+                        Toast.makeText(this@GithubStudioActivity, "Berhasil dipindah ke $newPath", Toast.LENGTH_SHORT).show()
+                        loadRepoTree(activeRepoUrl)
+                    } catch (e: Exception) {
+                        binding.tvStudioStatus.text = "Gagal rename/pindah: ${e.message}"
+                        Toast.makeText(this@GithubStudioActivity, e.message, Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+            .setNegativeButton("Batal", null)
+            .show()
     }
 
     private fun refreshList() {
