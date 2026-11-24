@@ -138,13 +138,26 @@
                 android:id="@+id/btnStudioActions"
                 android:layout_width="wrap_content"
                 android:layout_height="34dp"
-                android:layout_marginStart="8dp"
+                android:layout_marginStart="6dp"
                 android:backgroundTint="#21262D"
-                android:paddingHorizontal="10dp"
+                android:paddingHorizontal="8dp"
                 android:text="Build / APK"
                 android:textAllCaps="false"
                 android:textColor="#3FB950"
-                android:textSize="12sp"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btnStudioCommits"
+                android:layout_width="wrap_content"
+                android:layout_height="34dp"
+                android:layout_marginStart="6dp"
+                android:backgroundTint="#21262D"
+                android:paddingHorizontal="8dp"
+                android:text="Commit"
+                android:textAllCaps="false"
+                android:textColor="#D2A8FF"
+                android:textSize="11sp"
                 android:textStyle="bold" />
         </LinearLayout>
 
