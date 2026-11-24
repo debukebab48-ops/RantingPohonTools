@@ -1,8 +1,13 @@
 package com.rantingpohon.tools
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Typeface
+import android.widget.ScrollView
+import android.widget.TextView
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -152,6 +157,15 @@ class GithubStudioActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
             startRenameOrMoveFlow(token)
+        }
+
+        binding.btnStudioActions.setOnClickListener {
+            val token = binding.etStudioToken.text.toString().trim()
+            if (activeRepoUrl.isEmpty() || token.isEmpty()) {
+                Toast.makeText(this, "Pilih repository & isi token dulu", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            openActionsMonitorDialog(token)
         }
 
         binding.etStudioSearch.addTextChangedListener(object : TextWatcher {
@@ -331,6 +345,154 @@ class GithubStudioActivity : AppCompatActivity() {
             }
             .setNegativeButton("Batal", null)
             .show()
+    }
+
+    private fun openActionsMonitorDialog(token: String) {
+        binding.tvStudioStatus.text = "Memuat status build GitHub Actions..."
+        lifecycleScope.launch {
+            try {
+                val runs = scanner.fetchWorkflowRuns(activeRepoUrl, token, activeBranch)
+                if (runs.isEmpty()) {
+                    binding.tvStudioStatus.text = "Belum ada riwayat build di branch $activeBranch."
+                    Toast.makeText(this@GithubStudioActivity, "Belum ada workflow run ditemukan", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                binding.tvStudioStatus.text = "Ketuk item build untuk lihat log atau unduh APK."
+
+                val labels = runs.map { run ->
+                    val badge = when {
+                        run.status != "completed" -> "⏳ RUNNING"
+                        run.conclusion == "success" -> "✅ SUCCESS"
+                        run.conclusion == "failure" -> "❌ FAILED"
+                        else -> "⚠️ ${run.conclusion.uppercase()}"
+                    }
+                    val title = run.displayTitle.take(45)
+                    "$badge • ${run.name}\n$title"
+                }.toTypedArray()
+
+                AlertDialog.Builder(this@GithubStudioActivity)
+                    .setTitle("GitHub Actions ($activeBranch)")
+                    .setItems(labels) { _, which ->
+                        handleSelectedWorkflowRun(token, runs[which])
+                    }
+                    .setNegativeButton("Tutup", null)
+                    .show()
+            } catch (e: Exception) {
+                binding.tvStudioStatus.text = "Error Actions: ${e.message}"
+                Toast.makeText(this@GithubStudioActivity, e.message, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun handleSelectedWorkflowRun(token: String, run: WorkflowRunItem) {
+        val options = mutableListOf<String>()
+        if (run.conclusion == "success") {
+            options.add("Unduh Artifact / APK")
+        }
+        options.add("Lihat Log Build / Error")
+        if (run.conclusion != "success") {
+            options.add("Cek Artifact (Jika Ada)")
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("${run.name} (${run.conclusion.ifEmpty { run.status }})")
+            .setItems(options.toTypedArray()) { _, which ->
+                val chosen = options[which]
+                if (chosen.startsWith("Lihat Log")) {
+                    showRunLogDialog(token, run)
+                } else {
+                    pickAndDownloadArtifact(token, run)
+                }
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun showRunLogDialog(token: String, run: WorkflowRunItem) {
+        binding.tvStudioStatus.text = "Mengambil log build..."
+        lifecycleScope.launch {
+            try {
+                val logText = scanner.fetchRunFailureLog(activeRepoUrl, token, run.id)
+                binding.tvStudioStatus.text = "Log build siap."
+
+                val tvLog = TextView(this@GithubStudioActivity).apply {
+                    text = logText
+                    textSize = 11f
+                    typeface = Typeface.MONOSPACE
+                    setPadding(32, 24, 32, 24)
+                    setTextIsSelectable(true)
+                }
+                val scroll = ScrollView(this@GithubStudioActivity).apply {
+                    addView(tvLog)
+                }
+
+                AlertDialog.Builder(this@GithubStudioActivity)
+                    .setTitle("Log Build #${run.id}")
+                    .setView(scroll)
+                    .setPositiveButton("Salin Log") { _, _ ->
+                        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        cm.setPrimaryClip(ClipData.newPlainText("build_log", logText))
+                        Toast.makeText(this@GithubStudioActivity, "Log disalin ke clipboard", Toast.LENGTH_SHORT).show()
+                    }
+                    .setNegativeButton("Tutup", null)
+                    .show()
+            } catch (e: Exception) {
+                binding.tvStudioStatus.text = "Gagal ambil log: ${e.message}"
+                Toast.makeText(this@GithubStudioActivity, e.message, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun pickAndDownloadArtifact(token: String, run: WorkflowRunItem) {
+        binding.tvStudioStatus.text = "Mengecek artifact APK..."
+        lifecycleScope.launch {
+            try {
+                val artifacts = scanner.fetchRunArtifacts(activeRepoUrl, token, run.id)
+                    .filter { !it.expired }
+                if (artifacts.isEmpty()) {
+                    binding.tvStudioStatus.text = "Tidak ada artifact aktif pada build ini."
+                    Toast.makeText(this@GithubStudioActivity, "Artifact tidak ditemukan atau sudah expired", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+
+                val labels = artifacts.map {
+                    val sizeMb = String.format("%.2f MB", it.sizeInBytes / (1024.0 * 1024.0))
+                    "${it.name} ($sizeMb)"
+                }.toTypedArray()
+
+                AlertDialog.Builder(this@GithubStudioActivity)
+                    .setTitle("Pilih Artifact untuk Diunduh")
+                    .setItems(labels) { _, which ->
+                        val chosen = artifacts[which]
+                        binding.tvStudioStatus.text = "Mengunduh ${chosen.name}..."
+                        Toast.makeText(this@GithubStudioActivity, "Mengunduh & mengekstrak APK...", Toast.LENGTH_SHORT).show()
+                        lifecycleScope.launch {
+                            try {
+                                val savedLocation = scanner.downloadArtifactApkToDownloads(
+                                    repoUrl = activeRepoUrl,
+                                    token = token,
+                                    artifactId = chosen.id,
+                                    artifactName = chosen.name
+                                )
+                                binding.tvStudioStatus.text = "Tersimpan di: $savedLocation"
+                                AlertDialog.Builder(this@GithubStudioActivity)
+                                    .setTitle("Unduhan Selesai")
+                                    .setMessage("File berhasil disimpan di:\n$savedLocation\n\nSilakan buka File Manager di folder Download untuk menginstal APK.")
+                                    .setPositiveButton("OK", null)
+                                    .show()
+                            } catch (e: Exception) {
+                                binding.tvStudioStatus.text = "Gagal unduh: ${e.message}"
+                                Toast.makeText(this@GithubStudioActivity, e.message, Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
+                    .setNegativeButton("Batal", null)
+                    .show()
+            } catch (e: Exception) {
+                binding.tvStudioStatus.text = "Error artifact: ${e.message}"
+                Toast.makeText(this@GithubStudioActivity, e.message, Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     private fun refreshList() {

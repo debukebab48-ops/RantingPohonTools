@@ -1,9 +1,16 @@
 package com.rantingpohon.tools
 
+import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import android.provider.DocumentsContract
+import android.provider.MediaStore
 import android.util.Base64
+import java.io.File
+import java.io.FileOutputStream
+import java.util.zip.ZipInputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -17,6 +24,23 @@ data class GithubRepoItem(
     val fullName: String,
     val htmlUrl: String,
     val isPrivate: Boolean
+)
+
+data class WorkflowRunItem(
+    val id: Long,
+    val name: String,
+    val headBranch: String,
+    val status: String,
+    val conclusion: String,
+    val displayTitle: String,
+    val createdAt: String
+)
+
+data class WorkflowArtifactItem(
+    val id: Long,
+    val name: String,
+    val sizeInBytes: Long,
+    val expired: Boolean
 )
 
 class RepoScanner(private val context: Context) {
@@ -373,6 +397,244 @@ class RepoScanner(private val context: Context) {
         client.newCall(delReq).execute().use { resp ->
             if (!resp.isSuccessful) {
                 throw Exception("File baru terbuat, tapi gagal hapus file lama (${resp.code}).")
+            }
+        }
+    }
+
+    suspend fun fetchWorkflowRuns(
+        repoUrl: String,
+        token: String,
+        branch: String? = null
+    ): List<WorkflowRunItem> = withContext(Dispatchers.IO) {
+        val cleanToken = token.trim()
+        if (cleanToken.isEmpty()) throw IllegalArgumentException("GitHub Token wajib diisi.")
+        val (owner, repo) = parseOwnerRepo(repoUrl)
+        val branchQuery = if (!branch.isNullOrBlank()) "&branch=${Uri.encode(branch.trim())}" else ""
+        val req = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/actions/runs?per_page=15$branchQuery")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .build()
+
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                throw Exception("Gagal memuat GitHub Actions (${resp.code}). Pastikan Token punya izin 'actions:read' / 'repo'.")
+            }
+            val root = JSONObject(resp.body?.string() ?: "{}")
+            val arr = root.optJSONArray("workflow_runs") ?: JSONArray()
+            val list = mutableListOf<WorkflowRunItem>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                list.add(
+                    WorkflowRunItem(
+                        id = obj.getLong("id"),
+                        name = obj.optString("name", "Workflow"),
+                        headBranch = obj.optString("head_branch", "-"),
+                        status = obj.optString("status", "unknown"),
+                        conclusion = obj.optString("conclusion", ""),
+                        displayTitle = obj.optString("display_title", obj.optString("head_commit", "")),
+                        createdAt = obj.optString("created_at", "")
+                    )
+                )
+            }
+            list
+        }
+    }
+
+    suspend fun fetchRunFailureLog(
+        repoUrl: String,
+        token: String,
+        runId: Long
+    ): String = withContext(Dispatchers.IO) {
+        val cleanToken = token.trim()
+        if (cleanToken.isEmpty()) throw IllegalArgumentException("GitHub Token wajib diisi.")
+        val (owner, repo) = parseOwnerRepo(repoUrl)
+
+        val jobsReq = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/actions/runs/$runId/jobs")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .build()
+
+        val jobsArray = client.newCall(jobsReq).execute().use { resp ->
+            if (!resp.isSuccessful) throw Exception("Gagal memuat detail job (${resp.code}).")
+            JSONObject(resp.body?.string() ?: "{}").optJSONArray("jobs") ?: JSONArray()
+        }
+
+        if (jobsArray.length() == 0) return@withContext "Tidak ada data job pada run ini."
+
+        var targetJobId: Long = -1L
+        var targetJobName = ""
+        val summary = StringBuilder()
+
+        for (i in 0 until jobsArray.length()) {
+            val job = jobsArray.getJSONObject(i)
+            val jId = job.getLong("id")
+            val jName = job.optString("name", "Job")
+            val jConclusion = job.optString("conclusion", job.optString("status", ""))
+            summary.append("Job: $jName [$jConclusion]\n")
+
+            val steps = job.optJSONArray("steps") ?: JSONArray()
+            for (s in 0 until steps.length()) {
+                val step = steps.getJSONObject(s)
+                val sName = step.optString("name", "Step")
+                val sConc = step.optString("conclusion", "")
+                if (sConc == "failure" || sConc == "cancelled") {
+                    summary.append("  ✖ Step gagal: $sName ($sConc)\n")
+                }
+            }
+
+            if (jConclusion == "failure" || targetJobId == -1L) {
+                targetJobId = jId
+                targetJobName = jName
+            }
+        }
+
+        if (targetJobId == -1L) return@withContext summary.toString()
+
+        val logReq = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/actions/jobs/$targetJobId/logs")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .build()
+
+        val rawLog = client.newCall(logReq).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                return@withContext "$summary\n(Log teks tidak tersedia: HTTP ${resp.code})"
+            }
+            resp.body?.string() ?: ""
+        }
+
+        val lines = rawLog.lines()
+        val errorLines = lines.filter { line ->
+            line.contains("e: ", ignoreCase = false) ||
+                line.contains("FAILURE:", ignoreCase = true) ||
+                line.contains("ERROR", ignoreCase = true) ||
+                line.contains("Exception", ignoreCase = true) ||
+                line.contains("FAILED", ignoreCase = true)
+        }
+
+        val snippet = if (errorLines.isNotEmpty()) {
+            errorLines.takeLast(60).joinToString("\n")
+        } else {
+            lines.takeLast(60).joinToString("\n")
+        }
+
+        "$summary\n--- Log ($targetJobName) ---\n$snippet"
+    }
+
+    suspend fun fetchRunArtifacts(
+        repoUrl: String,
+        token: String,
+        runId: Long
+    ): List<WorkflowArtifactItem> = withContext(Dispatchers.IO) {
+        val cleanToken = token.trim()
+        if (cleanToken.isEmpty()) throw IllegalArgumentException("GitHub Token wajib diisi.")
+        val (owner, repo) = parseOwnerRepo(repoUrl)
+
+        val req = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/actions/runs/$runId/artifacts")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .build()
+
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) throw Exception("Gagal memuat daftar artifact (${resp.code}).")
+            val arr = JSONObject(resp.body?.string() ?: "{}").optJSONArray("artifacts") ?: JSONArray()
+            val items = mutableListOf<WorkflowArtifactItem>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                items.add(
+                    WorkflowArtifactItem(
+                        id = obj.getLong("id"),
+                        name = obj.optString("name", "artifact"),
+                        sizeInBytes = obj.optLong("size_in_bytes", 0L),
+                        expired = obj.optBoolean("expired", false)
+                    )
+                )
+            }
+            items
+        }
+    }
+
+    suspend fun downloadArtifactApkToDownloads(
+        repoUrl: String,
+        token: String,
+        artifactId: Long,
+        artifactName: String
+    ): String = withContext(Dispatchers.IO) {
+        val cleanToken = token.trim()
+        if (cleanToken.isEmpty()) throw IllegalArgumentException("GitHub Token wajib diisi.")
+        val (owner, repo) = parseOwnerRepo(repoUrl)
+
+        val req = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/actions/artifacts/$artifactId/zip")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .build()
+
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                throw Exception("Gagal mengunduh artifact (${resp.code}).")
+            }
+            val bodyStream = resp.body?.byteStream()
+                ?: throw Exception("Stream unduhan kosong.")
+
+            var extractedApkName: String? = null
+            var extractedApkBytes: ByteArray? = null
+
+            val tempZip = File(context.cacheDir, "gh_artifact_$artifactId.zip")
+            FileOutputStream(tempZip).use { out ->
+                bodyStream.copyTo(out)
+            }
+
+            ZipInputStream(tempZip.inputStream()).use { zis ->
+                var entry = zis.nextEntry
+                while (entry != null) {
+                    if (!entry.isDirectory && entry.name.endsWith(".apk", ignoreCase = true)) {
+                        extractedApkName = entry.name.substringAfterLast('/')
+                        extractedApkBytes = zis.readBytes()
+                        break
+                    }
+                    entry = zis.nextEntry
+                }
+            }
+
+            val finalFileName: String
+            val finalMime: String
+            val finalBytes: ByteArray
+
+            if (extractedApkName != null && extractedApkBytes != null) {
+                finalFileName = extractedApkName!!
+                finalMime = "application/vnd.android.package-archive"
+                finalBytes = extractedApkBytes!!
+            } else {
+                finalFileName = "${artifactName.replace(Regex("[^a-zA-Z0-9._-]"), "_")}.zip"
+                finalMime = "application/zip"
+                finalBytes = tempZip.readBytes()
+            }
+
+            tempZip.delete()
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, finalFileName)
+                    put(MediaStore.Downloads.MIME_TYPE, finalMime)
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val resolver = context.contentResolver
+                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: throw Exception("Gagal membuat file di folder Download.")
+                resolver.openOutputStream(uri)?.use { it.write(finalBytes) }
+                values.clear()
+                values.put(MediaStore.Downloads.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+                "Download/$finalFileName"
+            } else {
+                val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
+                val outFile = File(dir, finalFileName)
+                FileOutputStream(outFile).use { it.write(finalBytes) }
+                outFile.absolutePath
             }
         }
     }
