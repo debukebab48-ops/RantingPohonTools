@@ -87,16 +87,28 @@ class GithubStudioActivity : AppCompatActivity() {
         setupListeners()
     }
 
+    override fun onResume() {
+        super.onResume()
+        val savedToken = getSharedPreferences("ranting_pohon_prefs", Context.MODE_PRIVATE)
+            .getString("github_token", "") ?: ""
+        if (savedToken.isNotEmpty() && binding.etStudioToken.text.toString().trim().isEmpty()) {
+            binding.etStudioToken.setText(savedToken)
+        }
+    }
+
     private fun setupListeners() {
         binding.btnBackStudio.setOnClickListener { finish() }
 
         binding.etStudioToken.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                getSharedPreferences("ranting_pohon_prefs", Context.MODE_PRIVATE)
-                    .edit()
-                    .putString("github_token", s?.toString()?.trim() ?: "")
-                    .apply()
+                val clean = s?.toString()?.trim() ?: ""
+                if (clean.isNotEmpty()) {
+                    getSharedPreferences("ranting_pohon_prefs", Context.MODE_PRIVATE)
+                        .edit()
+                        .putString("github_token", clean)
+                        .apply()
+                }
             }
             override fun afterTextChanged(s: Editable?) {}
         })
