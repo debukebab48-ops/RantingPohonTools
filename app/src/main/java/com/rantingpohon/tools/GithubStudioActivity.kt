@@ -466,14 +466,19 @@ class GithubStudioActivity : AppCompatActivity() {
             return try {
                 val runsNow = scanner.fetchWorkflowRuns(activeRepoUrl, token, activeBranch)
                 val currentRun = runsNow.firstOrNull { it.id == run.id }
+                val cleanConclusion = currentRun?.conclusion?.takeIf { it.isNotEmpty() && it != "null" }
                 val statusLabel = currentRun?.let {
-                    if (it.conclusion.isNotEmpty()) "${it.status}/${it.conclusion}" else it.status
+                    if (cleanConclusion != null) "${it.status}/$cleanConclusion" else it.status
                 } ?: run.status
 
                 val rawLog = scanner.fetchRunFailureLog(activeRepoUrl, token, run.id)
                 val logText = if (rawLog.contains("HTTP 404") || rawLog.contains("Belum ada job")) {
                     val stepsSummary = scanner.fetchRunJobStepsSummary(activeRepoUrl, token, run.id)
-                    "$stepsSummary\n\n$rawLog"
+                    if (currentRun?.status == "completed") {
+                        "$stepsSummary\n\n$rawLog"
+                    } else {
+                        "$stepsSummary\n\n(Log teks mentah tersedia setelah proses selesai)"
+                    }
                 } else {
                     rawLog
                 }

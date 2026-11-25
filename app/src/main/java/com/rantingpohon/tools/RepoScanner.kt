@@ -476,8 +476,8 @@ class RepoScanner(private val context: Context) {
                 val job = jobsArr.getJSONObject(i)
                 val jName = job.optString("name", "job")
                 val jStatus = job.optString("status", "queued")
-                val jConclusion = job.optString("conclusion", "")
-                val stateLabel = if (jConclusion.isNotEmpty() && jConclusion != "null") "$jStatus/$jConclusion" else jStatus
+                val jConclusion = job.optString("conclusion", "").takeIf { it.isNotEmpty() && it != "null" }
+                val stateLabel = if (jConclusion != null) "$jStatus/$jConclusion" else jStatus
                 sb.append("Job: $jName ($stateLabel)\n")
 
                 val stepsArr = job.optJSONArray("steps") ?: JSONArray()
@@ -485,7 +485,7 @@ class RepoScanner(private val context: Context) {
                     val step = stepsArr.getJSONObject(s)
                     val sName = step.optString("name", "Step")
                     val sStatus = step.optString("status", "queued")
-                    val sConclusion = step.optString("conclusion", "")
+                    val sConclusion = step.optString("conclusion", "").takeIf { it.isNotEmpty() && it != "null" }
                     val icon = when {
                         sStatus == "in_progress" -> "⏳"
                         sConclusion == "success" -> "✅"
@@ -493,7 +493,7 @@ class RepoScanner(private val context: Context) {
                         sConclusion == "skipped" -> "⏭️"
                         else -> "•"
                     }
-                    val detail = if (sConclusion.isNotEmpty() && sConclusion != "null") "$sStatus/$sConclusion" else sStatus
+                    val detail = if (sConclusion != null) "$sStatus/$sConclusion" else sStatus
                     sb.append("  $icon $sName [$detail]\n")
                 }
                 sb.append("\n")
