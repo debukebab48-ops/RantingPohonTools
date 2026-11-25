@@ -594,7 +594,7 @@ class RepoScanner(private val context: Context) {
                 ""
             }
 
-            val dedupedList = uniqueErrors.entries.takeLast(50).joinToString("\n") { (msg, count) ->
+            val dedupedList = uniqueErrors.entries.toList().takeLast(50).joinToString("\n") { (msg, count) ->
                 if (count > 1) "• [x$count] $msg" else "• $msg"
             }
             "$causeBlock$dedupedList"
