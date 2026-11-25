@@ -5,6 +5,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.graphics.Typeface
 import android.view.View
 import android.widget.ScrollView
@@ -42,6 +44,14 @@ class GithubStudioActivity : AppCompatActivity() {
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK && activeRepoUrl.isNotEmpty()) {
             loadRepoTree(activeRepoUrl)
+        }
+    }
+
+    private val uploadFilePicker = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            handleSelectedUploadUri(uri)
         }
     }
 
@@ -124,6 +134,15 @@ class GithubStudioActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
             pickRepoDialog(token)
+        }
+
+        binding.btnStudioUploadFile.setOnClickListener {
+            val token = binding.etStudioToken.text.toString().trim()
+            if (activeRepoUrl.isEmpty() || token.isEmpty()) {
+                Toast.makeText(this, "Pilih repository & isi token dulu", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            uploadFilePicker.launch(arrayOf("*/*"))
         }
 
         binding.btnStudioNewFile.setOnClickListener {
@@ -611,6 +630,98 @@ class GithubStudioActivity : AppCompatActivity() {
                 Toast.makeText(this@GithubStudioActivity, e.message, Toast.LENGTH_LONG).show()
             }
         }
+    }
+
+    private fun handleSelectedUploadUri(uri: Uri) {
+        val token = binding.etStudioToken.text.toString().trim()
+        if (activeRepoUrl.isEmpty() || token.isEmpty()) {
+            Toast.makeText(this, "Repository atau token belum siap", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        var displayName = "uploaded_file"
+        var fileSize = -1L
+        contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
+            if (cursor.moveToFirst()) {
+                if (nameIdx != -1) displayName = cursor.getString(nameIdx) ?: displayName
+                if (sizeIdx != -1) fileSize = cursor.getLong(sizeIdx)
+            }
+        }
+
+        if (fileSize > 5_000_000L) {
+            Toast.makeText(this, "Ukuran file maksimal 5 MB untuk upload langsung", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val checkedDirs = allNodes.filter { it.isDirectory && it.isChecked }
+        val defaultPath = if (checkedDirs.size == 1) {
+            "${checkedDirs[0].path}/$displayName"
+        } else {
+            displayName
+        }
+
+        val etTargetPath = EditText(this).apply {
+            setText(defaultPath)
+            setSelection(defaultPath.length)
+            isSingleLine = true
+        }
+
+        val builder = AlertDialog.Builder(this)
+            .setTitle("Upload ke GitHub ($activeBranch)")
+            .setMessage("File: $displayName\nTentukan path tujuan di repository:")
+            .setView(etTargetPath)
+            .setPositiveButton("Upload Sekarang") { _, _ ->
+                val targetPath = etTargetPath.text.toString().trim().trimStart('/')
+                if (targetPath.isEmpty()) {
+                    Toast.makeText(this, "Path tujuan tidak boleh kosong", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                binding.tvStudioStatus.text = "Mengunggah $targetPath..."
+                lifecycleScope.launch {
+                    try {
+                        val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                                ?: throw Exception("Gagal membaca file dari penyimpanan HP.")
+                        }
+                        scanner.upsertGithubFileBytes(
+                            repoUrl = activeRepoUrl,
+                            token = token,
+                            filePath = targetPath,
+                            bytes = bytes,
+                            commitMessage = "Upload $targetPath via RantingPohonTools",
+                            branch = activeBranch
+                        )
+                        Toast.makeText(this@GithubStudioActivity, "Berhasil upload: $targetPath", Toast.LENGTH_SHORT).show()
+                        loadRepoTree(activeRepoUrl)
+                    } catch (e: Exception) {
+                        binding.tvStudioStatus.text = "Gagal upload: ${e.message}"
+                        Toast.makeText(this@GithubStudioActivity, e.message, Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+            .setNegativeButton("Batal", null)
+
+        if (scanner.isCodeFile(displayName)) {
+            builder.setNeutralButton("Buka Editor") { _, _ ->
+                val targetPath = etTargetPath.text.toString().trim().trimStart('/')
+                if (targetPath.isNotEmpty()) {
+                    val textContent = scanner.readLocalUriText(uri)
+                    val intent = Intent(this, CodeEditorActivity::class.java).apply {
+                        putExtra("repo_url", activeRepoUrl)
+                        putExtra("token", token)
+                        putExtra("file_path", targetPath)
+                        putExtra("content", textContent)
+                        putExtra("is_new_file", true)
+                        putExtra("branch", activeBranch)
+                    }
+                    editorLauncher.launch(intent)
+                }
+            }
+        }
+
+        builder.show()
     }
 
     private fun refreshList() {

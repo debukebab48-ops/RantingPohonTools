@@ -280,6 +280,45 @@ class RepoScanner(private val context: Context) {
         }
     }
 
+    suspend fun upsertGithubFileBytes(
+        repoUrl: String,
+        token: String,
+        filePath: String,
+        bytes: ByteArray,
+        commitMessage: String,
+        branch: String? = null
+    ) = withContext(Dispatchers.IO) {
+        val cleanToken = token.trim()
+        if (cleanToken.isEmpty()) throw IllegalArgumentException("GitHub Token wajib diisi untuk mengubah repo.")
+        val (owner, repo) = parseOwnerRepo(repoUrl)
+        val cleanPath = filePath.trim().trimStart('/')
+        if (cleanPath.isEmpty()) throw IllegalArgumentException("Path file tidak boleh kosong.")
+
+        val existingSha = getFileShaIfExists(owner, repo, cleanPath, cleanToken, branch)
+        val encodedContent = Base64.encodeToString(bytes, Base64.NO_WRAP)
+
+        val payload = JSONObject().apply {
+            put("message", commitMessage.ifBlank { "Upload $cleanPath via RantingPohonTools" })
+            put("content", encodedContent)
+            if (existingSha != null) put("sha", existingSha)
+            if (!branch.isNullOrBlank()) put("branch", branch.trim())
+        }
+
+        val req = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/contents/$cleanPath")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .put(payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .build()
+
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                val errBody = resp.body?.string() ?: ""
+                throw Exception("Gagal upload (${resp.code}): $errBody")
+            }
+        }
+    }
+
     suspend fun deleteGithubFile(
         repoUrl: String,
         token: String,
