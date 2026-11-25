@@ -567,13 +567,37 @@ class RepoScanner(private val context: Context) {
         }
 
         val lines = rawLog.lines()
+        val noisePrefixes = listOf(
+            "Build Date:",
+            "Image:",
+            "Included Software:",
+            "Image Release:",
+            "Secret source:",
+            "Cache mode:",
+            "Complete job name:",
+            "sparse-checkout-cone-mode:",
+            "java-package:",
+            "server-username:",
+            "dependency-graph-continue-on-failure:",
+            "Cache Size:",
+            "##[warning]"
+        )
+
         val errorLines = lines.filter { line ->
-            line.contains("e: ", ignoreCase = false) ||
-                line.contains("FAILURE:", ignoreCase = true) ||
-                line.contains("ERROR", ignoreCase = true) ||
-                line.contains("Exception", ignoreCase = true) ||
-                line.contains("FAILED", ignoreCase = true) ||
-                line.contains("Unresolved reference", ignoreCase = true)
+            val trimmed = line
+                .replace(Regex("""^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z?\s*"""), "")
+                .trim()
+            val isNoise = noisePrefixes.any { prefix -> trimmed.startsWith(prefix, ignoreCase = true) }
+            !isNoise && (
+                trimmed.startsWith("e: ") ||
+                    trimmed.contains(": error:", ignoreCase = true) ||
+                    trimmed.contains("FAILURE:", ignoreCase = true) ||
+                    trimmed.contains("FAILED", ignoreCase = true) ||
+                    trimmed.contains("Exception", ignoreCase = true) ||
+                    trimmed.contains("Unresolved reference", ignoreCase = true) ||
+                    trimmed.contains("Missing '", ignoreCase = true) ||
+                    trimmed.startsWith("##[error]")
+            )
         }
 
         val snippet = if (errorLines.isNotEmpty()) {
@@ -587,7 +611,13 @@ class RepoScanner(private val context: Context) {
                 }
             }
 
-            val topCause = uniqueErrors.entries.firstOrNull()?.key ?: ""
+            val topCause = uniqueErrors.keys.firstOrNull { key ->
+                key.startsWith("e: ") ||
+                    key.contains("Unresolved reference", ignoreCase = true) ||
+                    key.contains("Missing '", ignoreCase = true) ||
+                    key.contains("FAILURE:", ignoreCase = true) ||
+                    key.contains("Exception", ignoreCase = true)
+            } ?: uniqueErrors.keys.firstOrNull().orEmpty()
             val causeBlock = if (topCause.isNotEmpty()) {
                 "=== PENYEBAB UTAMA ===\n$topCause\n\n=== ERROR UNIK (${uniqueErrors.size} baris, total ${errorLines.size} kemunculan) ===\n"
             } else {
