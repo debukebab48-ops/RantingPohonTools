@@ -572,11 +572,32 @@ class RepoScanner(private val context: Context) {
                 line.contains("FAILURE:", ignoreCase = true) ||
                 line.contains("ERROR", ignoreCase = true) ||
                 line.contains("Exception", ignoreCase = true) ||
-                line.contains("FAILED", ignoreCase = true)
+                line.contains("FAILED", ignoreCase = true) ||
+                line.contains("Unresolved reference", ignoreCase = true)
         }
 
         val snippet = if (errorLines.isNotEmpty()) {
-            errorLines.takeLast(80).joinToString("\n")
+            val uniqueErrors = LinkedHashMap<String, Int>()
+            for (rawLine in errorLines) {
+                val cleaned = rawLine
+                    .replace(Regex("""^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z?\s*"""), "")
+                    .trim()
+                if (cleaned.isNotEmpty()) {
+                    uniqueErrors[cleaned] = (uniqueErrors[cleaned] ?: 0) + 1
+                }
+            }
+
+            val topCause = uniqueErrors.entries.firstOrNull()?.key ?: ""
+            val causeBlock = if (topCause.isNotEmpty()) {
+                "=== PENYEBAB UTAMA ===\n$topCause\n\n=== ERROR UNIK (${uniqueErrors.size} baris, total ${errorLines.size} kemunculan) ===\n"
+            } else {
+                ""
+            }
+
+            val dedupedList = uniqueErrors.entries.takeLast(50).joinToString("\n") { (msg, count) ->
+                if (count > 1) "• [x$count] $msg" else "• $msg"
+            }
+            "$causeBlock$dedupedList"
         } else {
             lines.takeLast(80).joinToString("\n")
         }
