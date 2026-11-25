@@ -165,12 +165,27 @@
                 android:id="@+id/btnStudioCommits"
                 android:layout_width="wrap_content"
                 android:layout_height="34dp"
-                android:layout_marginStart="6dp"
+                android:layout_marginStart="5dp"
                 android:backgroundTint="#21262D"
-                android:paddingHorizontal="8dp"
+                android:minWidth="0dp"
+                android:paddingHorizontal="7dp"
                 android:text="Commit"
                 android:textAllCaps="false"
                 android:textColor="#D2A8FF"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btnStudioBackup"
+                android:layout_width="wrap_content"
+                android:layout_height="34dp"
+                android:layout_marginStart="5dp"
+                android:backgroundTint="#21262D"
+                android:minWidth="0dp"
+                android:paddingHorizontal="7dp"
+                android:text="Backup"
+                android:textAllCaps="false"
+                android:textColor="#F0883E"
                 android:textSize="11sp"
                 android:textStyle="bold" />
         </LinearLayout>
