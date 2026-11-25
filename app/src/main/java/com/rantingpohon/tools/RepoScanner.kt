@@ -838,6 +838,246 @@ class RepoScanner(private val context: Context) {
         }
     }
 
+    suspend fun saveSnapshotBackupBranch(
+        repoUrl: String,
+        token: String,
+        sourceBranch: String,
+        backupBranch: String,
+        selectedFiles: List<TreeNode>
+    ): Int = withContext(Dispatchers.IO) {
+        val cleanToken = token.trim()
+        if (cleanToken.isEmpty()) throw IllegalArgumentException("GitHub Token wajib diisi.")
+        val filesToSave = selectedFiles.filter { !it.isDirectory }
+        if (filesToSave.isEmpty()) throw IllegalArgumentException("Centang minimal 1 file untuk di-backup.")
+
+        val (owner, repo) = parseOwnerRepo(repoUrl)
+        val treeEntries = JSONArray()
+
+        for (node in filesToSave) {
+            val content = fetchGithubFileContent(node, cleanToken)
+            val blobPayload = JSONObject().apply {
+                put("content", content)
+                put("encoding", "utf-8")
+            }
+            val blobReq = Request.Builder()
+                .url("https://api.github.com/repos/$owner/$repo/git/blobs")
+                .header("Accept", "application/vnd.github+json")
+                .header("Authorization", "Bearer $cleanToken")
+                .post(blobPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+                .build()
+
+            val blobSha = client.newCall(blobReq).execute().use { resp ->
+                if (!resp.isSuccessful) throw Exception("Gagal membuat blob ${node.path} (${resp.code}).")
+                JSONObject(resp.body?.string() ?: "{}").getString("sha")
+            }
+
+            treeEntries.put(JSONObject().apply {
+                put("path", node.path.trimStart('/'))
+                put("mode", "100644")
+                put("type", "blob")
+                put("sha", blobSha)
+            })
+        }
+
+        val treePayload = JSONObject().apply {
+            put("tree", treeEntries)
+        }
+        val treeReq = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/git/trees")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .post(treePayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .build()
+
+        val newTreeSha = client.newCall(treeReq).execute().use { resp ->
+            if (!resp.isSuccessful) throw Exception("Gagal membuat tree backup (${resp.code}).")
+            JSONObject(resp.body?.string() ?: "{}").getString("sha")
+        }
+
+        val commitPayload = JSONObject().apply {
+            put("message", "Backup snapshot ($sourceBranch) - ${filesToSave.size} file")
+            put("tree", newTreeSha)
+            put("parents", JSONArray())
+        }
+        val commitReq = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/git/commits")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .post(commitPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .build()
+
+        val newCommitSha = client.newCall(commitReq).execute().use { resp ->
+            if (!resp.isSuccessful) throw Exception("Gagal membuat commit backup (${resp.code}).")
+            JSONObject(resp.body?.string() ?: "{}").getString("sha")
+        }
+
+        val encodedBackup = Uri.encode(backupBranch)
+        val patchPayload = JSONObject().apply {
+            put("sha", newCommitSha)
+            put("force", true)
+        }
+        val patchReq = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/git/refs/heads/$encodedBackup")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .patch(patchPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .build()
+
+        val updatedExisting = client.newCall(patchReq).execute().use { it.isSuccessful }
+        if (!updatedExisting) {
+            val createRefPayload = JSONObject().apply {
+                put("ref", "refs/heads/$backupBranch")
+                put("sha", newCommitSha)
+            }
+            val createRefReq = Request.Builder()
+                .url("https://api.github.com/repos/$owner/$repo/git/refs")
+                .header("Accept", "application/vnd.github+json")
+                .header("Authorization", "Bearer $cleanToken")
+                .post(createRefPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+                .build()
+
+            client.newCall(createRefReq).execute().use { resp ->
+                if (!resp.isSuccessful) throw Exception("Gagal menyimpan branch backup (${resp.code}).")
+            }
+        }
+
+        filesToSave.size
+    }
+
+    suspend fun restoreSnapshotFromBackupBranch(
+        repoUrl: String,
+        token: String,
+        backupBranch: String,
+        targetBranch: String
+    ): Int = withContext(Dispatchers.IO) {
+        val cleanToken = token.trim()
+        if (cleanToken.isEmpty()) throw IllegalArgumentException("GitHub Token wajib diisi.")
+        val (owner, repo) = parseOwnerRepo(repoUrl)
+
+        val backupTreeReq = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/git/trees/${Uri.encode(backupBranch)}?recursive=1")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .build()
+
+        val backupEntries = JSONArray()
+        client.newCall(backupTreeReq).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                throw Exception("Branch backup '$backupBranch' belum ditemukan (${resp.code}).")
+            }
+            val arr = JSONObject(resp.body?.string() ?: "{}").optJSONArray("tree") ?: JSONArray()
+            for (i in 0 until arr.length()) {
+                val item = arr.getJSONObject(i)
+                if (item.optString("type") == "blob") {
+                    backupEntries.put(JSONObject().apply {
+                        put("path", item.getString("path"))
+                        put("mode", item.optString("mode", "100644"))
+                        put("type", "blob")
+                        put("sha", item.getString("sha"))
+                    })
+                }
+            }
+        }
+
+        if (backupEntries.length() == 0) {
+            throw Exception("Isi branch backup '$backupBranch' kosong.")
+        }
+
+        val targetRefReq = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/git/ref/heads/${Uri.encode(targetBranch)}")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .build()
+
+        val targetHeadCommitSha = client.newCall(targetRefReq).execute().use { resp ->
+            if (!resp.isSuccessful) throw Exception("Gagal membaca branch tujuan '$targetBranch' (${resp.code}).")
+            JSONObject(resp.body?.string() ?: "{}").getJSONObject("object").getString("sha")
+        }
+
+        val targetCommitReq = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/git/commits/$targetHeadCommitSha")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .build()
+
+        val targetBaseTreeSha = client.newCall(targetCommitReq).execute().use { resp ->
+            if (!resp.isSuccessful) throw Exception("Gagal membaca tree branch tujuan (${resp.code}).")
+            JSONObject(resp.body?.string() ?: "{}").getJSONObject("tree").getString("sha")
+        }
+
+        val newTreePayload = JSONObject().apply {
+            put("base_tree", targetBaseTreeSha)
+            put("tree", backupEntries)
+        }
+        val newTreeReq = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/git/trees")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .post(newTreePayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .build()
+
+        val mergedTreeSha = client.newCall(newTreeReq).execute().use { resp ->
+            if (!resp.isSuccessful) throw Exception("Gagal menyusun tree restore (${resp.code}).")
+            JSONObject(resp.body?.string() ?: "{}").getString("sha")
+        }
+
+        val restoreCommitPayload = JSONObject().apply {
+            put("message", "Restore ${backupEntries.length()} file dari $backupBranch")
+            put("tree", mergedTreeSha)
+            put("parents", JSONArray().put(targetHeadCommitSha))
+        }
+        val restoreCommitReq = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/git/commits")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .post(restoreCommitPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .build()
+
+        val restoredCommitSha = client.newCall(restoreCommitReq).execute().use { resp ->
+            if (!resp.isSuccessful) throw Exception("Gagal membuat commit restore (${resp.code}).")
+            JSONObject(resp.body?.string() ?: "{}").getString("sha")
+        }
+
+        val updateTargetPayload = JSONObject().apply {
+            put("sha", restoredCommitSha)
+            put("force", false)
+        }
+        val updateTargetReq = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/git/refs/heads/${Uri.encode(targetBranch)}")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .patch(updateTargetPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .build()
+
+        client.newCall(updateTargetReq).execute().use { resp ->
+            if (!resp.isSuccessful) throw Exception("Gagal memperbarui branch '$targetBranch' (${resp.code}).")
+        }
+
+        backupEntries.length()
+    }
+
+    suspend fun deleteGithubBranch(
+        repoUrl: String,
+        token: String,
+        branchName: String
+    ) = withContext(Dispatchers.IO) {
+        val cleanToken = token.trim()
+        if (cleanToken.isEmpty()) throw IllegalArgumentException("GitHub Token wajib diisi.")
+        val (owner, repo) = parseOwnerRepo(repoUrl)
+        val req = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/git/refs/heads/${Uri.encode(branchName)}")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .delete()
+            .build()
+
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful && resp.code != 422 && resp.code != 404) {
+                throw Exception("Gagal menghapus branch '$branchName' (${resp.code}).")
+            }
+        }
+    }
+
     suspend fun scanLocalTree(treeUri: Uri): List<TreeNode> = withContext(Dispatchers.IO) {
         val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
         val result = mutableListOf<TreeNode>()

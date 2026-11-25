@@ -212,6 +212,15 @@ class GithubStudioActivity : AppCompatActivity() {
             openCommitHistoryDialog(token)
         }
 
+        binding.btnStudioBackup.setOnClickListener {
+            val token = binding.etStudioToken.text.toString().trim()
+            if (activeRepoUrl.isEmpty() || token.isEmpty()) {
+                Toast.makeText(this, "Pilih repository & isi token dulu", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            openBackupMenuDialog(token)
+        }
+
         binding.etStudioSearch.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
@@ -402,6 +411,11 @@ class GithubStudioActivity : AppCompatActivity() {
                     return@launch
                 }
                 binding.tvStudioStatus.text = "Ketuk item build untuk lihat log atau unduh APK."
+
+                val latestRun = runs.firstOrNull()
+                if (latestRun != null && latestRun.status == "completed" && latestRun.conclusion == "success") {
+                    autoRefreshBackupOnGreenBuild(token, latestRun.id)
+                }
 
                 val labels = runs.map { run ->
                     val badge = when {
@@ -722,6 +736,116 @@ class GithubStudioActivity : AppCompatActivity() {
         }
 
         builder.show()
+    }
+
+    private fun getBackupBranchName(): String {
+        val base = activeBranch.ifBlank { "main" }
+        return "backup-$base"
+    }
+
+    private fun autoRefreshBackupOnGreenBuild(token: String, runId: Long) {
+        val prefs = getSharedPreferences("ranting_pohon_prefs", Context.MODE_PRIVATE)
+        val syncKey = "studio_green_backup_${activeRepoUrl.hashCode()}_${activeBranch}"
+        if (prefs.getLong(syncKey, -1L) == runId) return
+
+        val checkedFiles = allNodes.filter { !it.isDirectory && it.isChecked }
+        if (checkedFiles.isEmpty()) return
+
+        val backupBranch = getBackupBranchName()
+        lifecycleScope.launch {
+            try {
+                val count = scanner.saveSnapshotBackupBranch(
+                    repoUrl = activeRepoUrl,
+                    token = token,
+                    sourceBranch = activeBranch,
+                    backupBranch = backupBranch,
+                    selectedFiles = checkedFiles
+                )
+                prefs.edit().putLong(syncKey, runId).apply()
+                binding.tvStudioStatus.text = "Build ijo: backup '$backupBranch' otomatis diperbarui ($count file)."
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private fun openBackupMenuDialog(token: String) {
+        val backupBranch = getBackupBranchName()
+        val checkedFiles = allNodes.filter { !it.isDirectory && it.isChecked }
+        val options = arrayOf(
+            "Simpan Backup Sekarang (${checkedFiles.size} file tercentang -> $backupBranch)",
+            "Restore / Kembalikan File dari $backupBranch ke $activeBranch",
+            "Hapus Branch Backup ($backupBranch)"
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle("Backup Snapshot ($activeBranch)")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> {
+                        if (checkedFiles.isEmpty()) {
+                            Toast.makeText(this, "Centang minimal 1 file dulu di daftar", Toast.LENGTH_SHORT).show()
+                            return@setItems
+                        }
+                        binding.tvStudioStatus.text = "Menyimpan snapshot ke $backupBranch..."
+                        lifecycleScope.launch {
+                            try {
+                                val count = scanner.saveSnapshotBackupBranch(
+                                    repoUrl = activeRepoUrl,
+                                    token = token,
+                                    sourceBranch = activeBranch,
+                                    backupBranch = backupBranch,
+                                    selectedFiles = checkedFiles
+                                )
+                                binding.tvStudioStatus.text = "Backup tersimpan di $backupBranch ($count file)."
+                                Toast.makeText(this@GithubStudioActivity, "Backup $count file sukses!", Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) {
+                                binding.tvStudioStatus.text = "Gagal backup: ${e.message}"
+                                Toast.makeText(this@GithubStudioActivity, e.message, Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
+                    1 -> {
+                        AlertDialog.Builder(this)
+                            .setTitle("Restore dari $backupBranch?")
+                            .setMessage("File-file di branch '$activeBranch' akan dikembalikan ke versi yang tersimpan di '$backupBranch'.")
+                            .setPositiveButton("Restore Sekarang") { _, _ ->
+                                binding.tvStudioStatus.text = "Memulihkan file dari $backupBranch..."
+                                lifecycleScope.launch {
+                                    try {
+                                        val restoredCount = scanner.restoreSnapshotFromBackupBranch(
+                                            repoUrl = activeRepoUrl,
+                                            token = token,
+                                            backupBranch = backupBranch,
+                                            targetBranch = activeBranch
+                                        )
+                                        Toast.makeText(this@GithubStudioActivity, "Berhasil restore $restoredCount file!", Toast.LENGTH_SHORT).show()
+                                        loadRepoTree(activeRepoUrl)
+                                    } catch (e: Exception) {
+                                        binding.tvStudioStatus.text = "Gagal restore: ${e.message}"
+                                        Toast.makeText(this@GithubStudioActivity, e.message, Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            }
+                            .setNegativeButton("Batal", null)
+                            .show()
+                    }
+                    2 -> {
+                        binding.tvStudioStatus.text = "Menghapus $backupBranch..."
+                        lifecycleScope.launch {
+                            try {
+                                scanner.deleteGithubBranch(activeRepoUrl, token, backupBranch)
+                                binding.tvStudioStatus.text = "Branch $backupBranch telah dihapus."
+                                Toast.makeText(this@GithubStudioActivity, "Backup dihapus", Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) {
+                                binding.tvStudioStatus.text = "Gagal hapus backup: ${e.message}"
+                                Toast.makeText(this@GithubStudioActivity, e.message, Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
+                }
+            }
+            .setNegativeButton("Tutup", null)
+            .show()
     }
 
     private fun refreshList() {
