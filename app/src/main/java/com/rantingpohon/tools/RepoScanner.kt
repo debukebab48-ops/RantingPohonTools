@@ -588,14 +588,21 @@ class RepoScanner(private val context: Context) {
                 .replace(Regex("""^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z?\s*"""), "")
                 .trim()
             val isNoise = noisePrefixes.any { prefix -> trimmed.startsWith(prefix, ignoreCase = true) }
-            !isNoise && (
+            val isStackTrace = trimmed.startsWith("at ") ||
+                trimmed.startsWith("Caused by:") ||
+                trimmed.startsWith("org.gradle.") ||
+                trimmed.startsWith("org.jetbrains.") ||
+                trimmed.contains("TaskExecutionException") ||
+                trimmed.contains("CompilationErrorException") ||
+                trimmed.contains("See log for more details", ignoreCase = true)
+
+            !isNoise && !isStackTrace && (
                 trimmed.startsWith("e: ") ||
                     trimmed.contains(": error:", ignoreCase = true) ||
-                    trimmed.contains("FAILURE:", ignoreCase = true) ||
-                    trimmed.contains("FAILED", ignoreCase = true) ||
-                    trimmed.contains("Exception", ignoreCase = true) ||
+                    trimmed.contains("FAILURE: Build failed", ignoreCase = true) ||
                     trimmed.contains("Unresolved reference", ignoreCase = true) ||
                     trimmed.contains("Missing '", ignoreCase = true) ||
+                    trimmed.contains("is not applicable to", ignoreCase = true) ||
                     trimmed.startsWith("##[error]")
             )
         }
