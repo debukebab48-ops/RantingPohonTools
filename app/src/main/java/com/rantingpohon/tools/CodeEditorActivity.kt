@@ -12,6 +12,7 @@ import android.text.style.ForegroundColorSpan
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -34,6 +35,8 @@ class CodeEditorActivity : AppCompatActivity() {
     private var isHighlighting = false
     private var highlightedMatchStart = -1
     private var highlightedMatchEnd = -1
+    private var isEditorLocked = false
+    private var savedKeyListener: android.text.method.KeyListener? = null
 
     private val keywordPattern = Regex(
         "\\b(package|import|class|interface|object|fun|val|var|private|public|protected|internal|override|open|abstract|sealed|data|enum|suspend|return|if|else|when|for|while|do|try|catch|finally|throw|true|false|null|this|super|in|is|as|by|init|companion|void|int|boolean|String|List|Map|Set)\\b"
@@ -66,6 +69,50 @@ class CodeEditorActivity : AppCompatActivity() {
         binding.tvEditorFileName.text = filePath.substringAfterLast('/')
         binding.tvEditorInfo.text = filePath
         binding.btnDeleteThisFile.visibility = if (isNewFile) View.GONE else View.VISIBLE
+
+        val btnTestBuild = Button(this).apply {
+            text = "Tes Build"
+            textAllCaps = false
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setBackgroundColor(Color.parseColor("#1F6FEB"))
+            textSize = 11f
+            minimumWidth = 0
+            minHeight = 0
+            setPadding(16, 6, 16, 6)
+            setOnClickListener {
+                if (repoUrl.isEmpty() || token.isEmpty()) {
+                    Toast.makeText(this@CodeEditorActivity, "Repo atau token belum tersedia", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                val activeBranchExtra = intent.getStringExtra("branch")
+                binding.tvEditorInfo.text = "Memicu Tes Build di GitHub Actions..."
+                lifecycleScope.launch {
+                    try {
+                        val msg = scanner.triggerWorkflowDispatch(repoUrl, token, activeBranchExtra)
+                        binding.tvEditorInfo.text = "$msg • Cek status build & log error..."
+                        kotlinx.coroutines.delay(2500L)
+                        val runs = scanner.fetchWorkflowRuns(repoUrl, token, activeBranchExtra)
+                        val latest = runs.firstOrNull()
+                        if (latest == null) {
+                            binding.tvEditorInfo.text = "$msg (menunggu run muncul)"
+                        } else if (latest.status == "completed" && latest.conclusion == "failure") {
+                            val logSnippet = scanner.fetchRunFailureLog(repoUrl, token, latest.id)
+                            AlertDialog.Builder(this@CodeEditorActivity)
+                                .setTitle("Build Gagal (#${latest.id})")
+                                .setMessage(logSnippet)
+                                .setPositiveButton("OK", null)
+                                .show()
+                        } else {
+                            binding.tvEditorInfo.text = "Run #${latest.id}: ${latest.status} (${latest.conclusion.ifEmpty { "-" }})"
+                        }
+                    } catch (e: Exception) {
+                        binding.tvEditorInfo.text = "Tes Build gagal: ${e.message}"
+                        Toast.makeText(this@CodeEditorActivity, e.message, Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+        (binding.btnDeleteThisFile.parent as? android.view.ViewGroup)?.addView(btnTestBuild)
 
         setupSymbolBar()
         setupListeners()
@@ -114,6 +161,7 @@ class CodeEditorActivity : AppCompatActivity() {
                 updateLineNumbers()
                 applySyntaxHighlighting(s)
                 updateMatchCount()
+                refreshSyntaxCheck()
             }
         })
 
@@ -127,6 +175,156 @@ class CodeEditorActivity : AppCompatActivity() {
                 applySyntaxHighlighting(binding.etCodeEditor.text)
             }
         })
+
+        val btnLockEditor = Button(this).apply {
+            text = "Kunci: OFF"
+            textAllCaps = false
+            setTextColor(Color.parseColor("#E6EDF3"))
+            setBackgroundColor(Color.parseColor("#21262D"))
+            textSize = 11f
+            minimumWidth = 0
+            minHeight = 0
+            setPadding(16, 6, 16, 6)
+            setOnClickListener {
+                isEditorLocked = !isEditorLocked
+                if (isEditorLocked) {
+                    if (savedKeyListener == null) {
+                        savedKeyListener = binding.etCodeEditor.keyListener
+                    }
+                    binding.etCodeEditor.keyListener = null
+                    binding.etCodeEditor.isCursorVisible = false
+                    text = "Kunci: ON"
+                    setTextColor(Color.parseColor("#3FB950"))
+                    Toast.makeText(this@CodeEditorActivity, "Area kode dikunci (aman dari kesenggol)", Toast.LENGTH_SHORT).show()
+                } else {
+                    binding.etCodeEditor.keyListener = savedKeyListener
+                    binding.etCodeEditor.isCursorVisible = true
+                    text = "Kunci: OFF"
+                    setTextColor(Color.parseColor("#E6EDF3"))
+                    Toast.makeText(this@CodeEditorActivity, "Area kode dibuka kembali", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        (binding.tvMatchCounter.parent as? android.view.ViewGroup)?.addView(btnLockEditor)
+
+        val tvSyntaxCheck = TextView(this).apply {
+            text = "Cek: true"
+            textSize = 11f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor("#3FB950"))
+            setPadding(12, 4, 16, 4)
+        }
+
+        var lastIssues = emptyList<String>()
+
+        fun refreshSyntaxCheck() {
+            val raw = binding.etCodeEditor.text.toString()
+            val issues = mutableListOf<String>()
+
+            data class OpenToken(val ch: Char, val line: Int)
+            val stack = ArrayDeque<OpenToken>()
+
+            var lineNum = 1
+            var inDoubleQuote = false
+            var quoteStartLine = 1
+            var escaped = false
+
+            for (ch in raw) {
+                if (escaped) {
+                    escaped = false
+                    if (ch == '\n') lineNum++
+                    continue
+                }
+                if (ch == '\\') {
+                    escaped = true
+                    continue
+                }
+                if (ch == '"') {
+                    if (!inDoubleQuote) {
+                        inDoubleQuote = true
+                        quoteStartLine = lineNum
+                    } else {
+                        inDoubleQuote = false
+                    }
+                    continue
+                }
+                if (!inDoubleQuote) {
+                    when (ch) {
+                        '{', '(', '[' -> stack.addLast(OpenToken(ch, lineNum))
+                        '}' -> {
+                            val top = stack.lastOrNull()
+                            if (top != null && top.ch == '{') {
+                                stack.removeLast()
+                            } else {
+                                issues.add("Baris $lineNum: '}' berlebih / tidak ada pasangan '{'")
+                            }
+                        }
+                        ')' -> {
+                            val top = stack.lastOrNull()
+                            if (top != null && top.ch == '(') {
+                                stack.removeLast()
+                            } else {
+                                issues.add("Baris $lineNum: ')' berlebih / tidak ada pasangan '('")
+                            }
+                        }
+                        ']' -> {
+                            val top = stack.lastOrNull()
+                            if (top != null && top.ch == '[') {
+                                stack.removeLast()
+                            } else {
+                                issues.add("Baris $lineNum: ']' berlebih / tidak ada pasangan '['")
+                            }
+                        }
+                    }
+                }
+                if (ch == '\n') {
+                    lineNum++
+                }
+            }
+
+            if (inDoubleQuote) {
+                issues.add("Baris $quoteStartLine: Tanda kutip '\"' belum ditutup")
+            }
+            while (stack.isNotEmpty()) {
+                val rem = stack.removeLast()
+                val pair = when (rem.ch) {
+                    '{' -> '}'
+                    '(' -> ')'
+                    '[' -> ']'
+                    else -> '?'
+                }
+                issues.add("Baris ${rem.line}: '${rem.ch}' belum ditutup dengan '$pair'")
+            }
+
+            lastIssues = issues
+            val isBalanced = issues.isEmpty()
+            tvSyntaxCheck.text = if (isBalanced) "true" else "false"
+            tvSyntaxCheck.setTextColor(
+                Color.parseColor(if (isBalanced) "#3FB950" else "#F85149")
+            )
+        }
+
+        tvSyntaxCheck.setOnClickListener {
+            if (lastIssues.isEmpty()) {
+                Toast.makeText(this, "Cek lokal: true (tidak ada issue baris terdeteksi)", Toast.LENGTH_SHORT).show()
+            } else {
+                AlertDialog.Builder(this)
+                    .setTitle("Detail Baris Bermasalah (${lastIssues.size})")
+                    .setMessage(lastIssues.joinToString("\n"))
+                    .setPositiveButton("OK", null)
+                    .show()
+            }
+        }
+
+        (binding.btnDeleteThisFile.parent as? android.view.ViewGroup)?.let { parent ->
+            val idx = parent.indexOfChild(binding.btnDeleteThisFile)
+            if (idx >= 0) {
+                parent.addView(tvSyntaxCheck, idx)
+            } else {
+                parent.addView(tvSyntaxCheck)
+            }
+        }
+        refreshSyntaxCheck()
 
         binding.btnFindNext.setOnClickListener {
             findNextMatch(forward = true)
@@ -334,12 +532,36 @@ class CodeEditorActivity : AppCompatActivity() {
         val etCommit = EditText(this).apply {
             hint = "Pesan commit (contoh: Fix bug di $filePath)"
             setText(if (isNewFile) "Create $filePath" else "Update $filePath")
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        val btnSkipCi = Button(this).apply {
+            text = "+ [skip ci]"
+            textAllCaps = false
+            setOnClickListener {
+                val current = etCommit.text.toString()
+                if (!current.contains("[skip ci]", ignoreCase = true)) {
+                    val trimmed = current.trimEnd()
+                    etCommit.setText(if (trimmed.isEmpty()) "[skip ci]" else "$trimmed [skip ci]")
+                    etCommit.setSelection(etCommit.text.length)
+                }
+            }
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(48, 16, 48, 0)
+            addView(etCommit, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(btnSkipCi)
         }
 
         AlertDialog.Builder(this)
             .setTitle("Commit & Push ke GitHub")
             .setMessage("Target: $filePath")
-            .setView(etCommit)
+            .setView(container)
             .setPositiveButton("Push Sekarang") { _, _ ->
                 val finalCode = binding.etCodeEditor.text.toString()
                 val msg = etCommit.text.toString().trim()

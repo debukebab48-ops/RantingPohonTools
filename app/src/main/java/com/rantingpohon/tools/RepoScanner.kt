@@ -487,6 +487,67 @@ class RepoScanner(private val context: Context) {
         }
     }
 
+    suspend fun triggerWorkflowDispatch(
+        repoUrl: String,
+        token: String,
+        branch: String? = null
+    ): String = withContext(Dispatchers.IO) {
+        val cleanToken = token.trim()
+        if (cleanToken.isEmpty()) throw IllegalArgumentException("GitHub Token wajib diisi.")
+        val (owner, repo) = parseOwnerRepo(repoUrl)
+        val refBranch = if (!branch.isNullOrBlank()) branch.trim() else fetchDefaultBranch(repoUrl, cleanToken)
+
+        val wfReq = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/actions/workflows")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .build()
+
+        val workflowIdOrFile = client.newCall(wfReq).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                throw Exception("Gagal memuat daftar workflow (${resp.code}).")
+            }
+            val workflows = JSONObject(resp.body?.string() ?: "{}").optJSONArray("workflows") ?: JSONArray()
+            if (workflows.length() == 0) {
+                throw Exception("Tidak ada workflow di repository ini.")
+            }
+            var chosen = ""
+            for (i in 0 until workflows.length()) {
+                val wf = workflows.getJSONObject(i)
+                val path = wf.optString("path", "")
+                val name = wf.optString("name", "")
+                if (path.endsWith("build.yml", true) || name.contains("build", true) || name.contains("apk", true)) {
+                    chosen = wf.optLong("id", 0L).takeIf { it > 0L }?.toString() ?: wf.optString("path", "")
+                    break
+                }
+            }
+            if (chosen.isEmpty()) {
+                val first = workflows.getJSONObject(0)
+                chosen = first.optLong("id", 0L).takeIf { it > 0L }?.toString() ?: first.optString("path", "")
+            }
+            if (chosen.isEmpty()) throw Exception("Workflow tidak dapat diidentifikasi.")
+            chosen
+        }
+
+        val payload = JSONObject().apply {
+            put("ref", refBranch)
+        }
+        val dispatchReq = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/actions/workflows/$workflowIdOrFile/dispatches")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .post(payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .build()
+
+        client.newCall(dispatchReq).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                val err = resp.body?.string() ?: ""
+                throw Exception("Gagal memicu Tes Build (${resp.code}). Pastikan workflow punya 'workflow_dispatch'. $err")
+            }
+        }
+        "Tes Build dipicu di branch '$refBranch'"
+    }
+
     suspend fun fetchRunJobStepsSummary(
         repoUrl: String,
         token: String?,
