@@ -73,7 +73,7 @@ class CodeEditorActivity : AppCompatActivity() {
 
         val btnTestBuild = Button(this).apply {
             text = "Tes Build"
-            textAllCaps = false
+            isAllCaps = false
             setTextColor(Color.parseColor("#FFFFFF"))
             setBackgroundColor(Color.parseColor("#1F6FEB"))
             textSize = 11f
@@ -152,71 +152,15 @@ class CodeEditorActivity : AppCompatActivity() {
                 if (binding.panelFindReplace.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         }
 
-        binding.etCodeEditor.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-            override fun afterTextChanged(s: Editable?) {
-                if (isHighlighting || s == null) return
-                highlightedMatchStart = -1
-                highlightedMatchEnd = -1
-                updateLineNumbers()
-                applySyntaxHighlighting(s)
-                updateMatchCount()
-                refreshSyntaxCheck()
-            }
-        })
-
-        binding.etFindText.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-            override fun afterTextChanged(s: Editable?) {
-                highlightedMatchStart = -1
-                highlightedMatchEnd = -1
-                updateMatchCount()
-                applySyntaxHighlighting(binding.etCodeEditor.text)
-            }
-        })
-
-        val btnLockEditor = Button(this).apply {
-            text = "Kunci: OFF"
-            textAllCaps = false
-            setTextColor(Color.parseColor("#E6EDF3"))
-            setBackgroundColor(Color.parseColor("#21262D"))
-            textSize = 11f
-            minimumWidth = 0
-            minHeight = 0
-            setPadding(16, 6, 16, 6)
-            setOnClickListener {
-                isEditorLocked = !isEditorLocked
-                if (isEditorLocked) {
-                    if (savedKeyListener == null) {
-                        savedKeyListener = binding.etCodeEditor.keyListener
-                    }
-                    binding.etCodeEditor.keyListener = null
-                    binding.etCodeEditor.isCursorVisible = false
-                    text = "Kunci: ON"
-                    setTextColor(Color.parseColor("#3FB950"))
-                    Toast.makeText(this@CodeEditorActivity, "Area kode dikunci (aman dari kesenggol)", Toast.LENGTH_SHORT).show()
-                } else {
-                    binding.etCodeEditor.keyListener = savedKeyListener
-                    binding.etCodeEditor.isCursorVisible = true
-                    text = "Kunci: OFF"
-                    setTextColor(Color.parseColor("#E6EDF3"))
-                    Toast.makeText(this@CodeEditorActivity, "Area kode dibuka kembali", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-        (binding.tvMatchCounter.parent as? android.view.ViewGroup)?.addView(btnLockEditor)
+        var lastIssues = emptyList<String>()
 
         val tvSyntaxCheck = TextView(this).apply {
-            text = "Cek: true"
+            text = "true"
             textSize = 11f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setTextColor(Color.parseColor("#3FB950"))
             setPadding(12, 4, 16, 4)
         }
-
-        var lastIssues = emptyList<String>()
 
         fun refreshSyntaxCheck() {
             val raw = binding.etCodeEditor.text.toString()
@@ -304,6 +248,62 @@ class CodeEditorActivity : AppCompatActivity() {
                 Color.parseColor(if (isBalanced) "#3FB950" else "#F85149")
             )
         }
+
+        binding.etCodeEditor.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                if (isHighlighting || s == null) return
+                highlightedMatchStart = -1
+                highlightedMatchEnd = -1
+                updateLineNumbers()
+                applySyntaxHighlighting(s)
+                updateMatchCount()
+                refreshSyntaxCheck()
+            }
+        })
+
+        binding.etFindText.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                highlightedMatchStart = -1
+                highlightedMatchEnd = -1
+                updateMatchCount()
+                applySyntaxHighlighting(binding.etCodeEditor.text)
+            }
+        })
+
+        val btnLockEditor = Button(this).apply {
+            text = "Kunci: OFF"
+            isAllCaps = false
+            setTextColor(Color.parseColor("#E6EDF3"))
+            setBackgroundColor(Color.parseColor("#21262D"))
+            textSize = 11f
+            minimumWidth = 0
+            minHeight = 0
+            setPadding(16, 6, 16, 6)
+            setOnClickListener {
+                isEditorLocked = !isEditorLocked
+                if (isEditorLocked) {
+                    if (savedKeyListener == null) {
+                        savedKeyListener = binding.etCodeEditor.keyListener
+                    }
+                    binding.etCodeEditor.keyListener = null
+                    binding.etCodeEditor.isCursorVisible = false
+                    text = "Kunci: ON"
+                    setTextColor(Color.parseColor("#3FB950"))
+                    Toast.makeText(this@CodeEditorActivity, "Area kode dikunci (aman dari kesenggol)", Toast.LENGTH_SHORT).show()
+                } else {
+                    binding.etCodeEditor.keyListener = savedKeyListener
+                    binding.etCodeEditor.isCursorVisible = true
+                    text = "Kunci: OFF"
+                    setTextColor(Color.parseColor("#E6EDF3"))
+                    Toast.makeText(this@CodeEditorActivity, "Area kode dibuka kembali", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        (binding.tvMatchCounter.parent as? android.view.ViewGroup)?.addView(btnLockEditor)
 
         tvSyntaxCheck.setOnClickListener {
             if (lastIssues.isEmpty()) {
@@ -541,7 +541,7 @@ class CodeEditorActivity : AppCompatActivity() {
 
         val btnSkipCi = Button(this).apply {
             text = "+ [skip ci]"
-            textAllCaps = false
+            isAllCaps = false
             setOnClickListener {
                 val current = etCommit.text.toString()
                 if (!current.contains("[skip ci]", ignoreCase = true)) {
