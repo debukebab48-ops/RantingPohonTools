@@ -47,11 +47,13 @@ class GithubStudioActivity : AppCompatActivity() {
         }
     }
 
+    private var pendingUploadTargetDir: String = ""
+
     private val uploadFilePicker = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            handleSelectedUploadUri(uri)
+            handleSelectedUploadUri(uri, pendingUploadTargetDir)
         }
     }
 
@@ -142,7 +144,7 @@ class GithubStudioActivity : AppCompatActivity() {
                 Toast.makeText(this, "Pilih repository & isi token dulu", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            uploadFilePicker.launch(arrayOf("*/*"))
+            showPickUploadFolderDialog()
         }
 
         binding.btnStudioNewFile.setOnClickListener {
@@ -646,7 +648,28 @@ class GithubStudioActivity : AppCompatActivity() {
         }
     }
 
-    private fun handleSelectedUploadUri(uri: Uri) {
+    private fun showPickUploadFolderDialog() {
+        val folders = allNodes
+            .filter { it.isDirectory }
+            .map { it.path.trim('/') }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .sortedBy { it.lowercase() }
+
+        val folderOptions = mutableListOf("/ (Root repository)")
+        folderOptions.addAll(folders)
+
+        AlertDialog.Builder(this)
+            .setTitle("Pilih Folder Tujuan Upload")
+            .setItems(folderOptions.toTypedArray()) { _, which ->
+                pendingUploadTargetDir = if (which == 0) "" else folders[which - 1]
+                uploadFilePicker.launch(arrayOf("*/*"))
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun handleSelectedUploadUri(uri: Uri, targetDir: String) {
         val token = binding.etStudioToken.text.toString().trim()
         if (activeRepoUrl.isEmpty() || token.isEmpty()) {
             Toast.makeText(this, "Repository atau token belum siap", Toast.LENGTH_SHORT).show()
@@ -669,12 +692,8 @@ class GithubStudioActivity : AppCompatActivity() {
             return
         }
 
-        val checkedDirs = allNodes.filter { it.isDirectory && it.isChecked }
-        val defaultPath = if (checkedDirs.size == 1) {
-            "${checkedDirs[0].path}/$displayName"
-        } else {
-            displayName
-        }
+        val cleanDir = targetDir.trim().trim('/')
+        val defaultPath = if (cleanDir.isEmpty()) displayName else "$cleanDir/$displayName"
 
         val etTargetPath = EditText(this).apply {
             setText(defaultPath)
