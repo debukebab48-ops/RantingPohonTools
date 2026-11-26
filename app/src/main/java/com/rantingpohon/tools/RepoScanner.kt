@@ -1094,6 +1094,34 @@ class RepoScanner(private val context: Context) {
         }
     }
 
+    suspend fun fetchBackupSnapshotPreview(
+        repoUrl: String,
+        token: String,
+        backupBranch: String
+    ): List<String> = withContext(Dispatchers.IO) {
+        val cleanToken = token.trim()
+        if (cleanToken.isEmpty()) return@withContext emptyList()
+        val (owner, repo) = parseOwnerRepo(repoUrl)
+        val req = Request.Builder()
+            .url("https://api.github.com/repos/$owner/$repo/git/trees/${Uri.encode(backupBranch)}?recursive=1")
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", "Bearer $cleanToken")
+            .build()
+
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) return@withContext emptyList()
+            val arr = JSONObject(resp.body?.string() ?: "{}").optJSONArray("tree") ?: JSONArray()
+            val paths = mutableListOf<String>()
+            for (i in 0 until arr.length()) {
+                val item = arr.getJSONObject(i)
+                if (item.optString("type") == "blob") {
+                    paths.add(item.getString("path"))
+                }
+            }
+            paths.sorted()
+        }
+    }
+
     suspend fun scanLocalTree(treeUri: Uri): List<TreeNode> = withContext(Dispatchers.IO) {
         val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
         val result = mutableListOf<TreeNode>()
