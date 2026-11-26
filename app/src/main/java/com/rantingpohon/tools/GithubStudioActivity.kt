@@ -800,8 +800,6 @@ class GithubStudioActivity : AppCompatActivity() {
             } else {
                 savedPaths.joinToString("\n") { "• $it" }
             }
-            val infoMessage = "Status Backup: $statusLabel\nBranch: $backupBranch\nAuto Backup: $autoLabel\n\nIsi di dalam backup:\n$previewList"
-
             binding.tvStudioStatus.text = "Backup $backupBranch: $statusLabel • Auto: ${if (isAutoBackupEnabled()) "ON" else "OFF"}"
 
             val options = arrayOf(
@@ -812,9 +810,10 @@ class GithubStudioActivity : AppCompatActivity() {
                 "Hapus Branch Bekas Backup (Tidak Terpakai)"
             )
 
+            val titleWithInfo = "Backup ($activeBranch) • $statusLabel • Auto: ${if (isAutoBackupEnabled()) "ON" else "OFF"}"
+
             AlertDialog.Builder(this@GithubStudioActivity)
-                .setTitle("Backup Snapshot ($activeBranch)")
-                .setMessage(infoMessage)
+                .setTitle(titleWithInfo)
                 .setItems(options) { _, which ->
                     when (which) {
                         0 -> {
@@ -889,6 +888,14 @@ class GithubStudioActivity : AppCompatActivity() {
                             showDeleteUnusedBackupBranchesDialog(token)
                         }
                     }
+                }
+                .setNeutralButton("Lihat Isi") { _, _ ->
+                    val detailText = "Status: $statusLabel\nBranch: $backupBranch\nAuto Backup: $autoLabel\n\nIsi di dalam backup:\n$previewList"
+                    AlertDialog.Builder(this@GithubStudioActivity)
+                        .setTitle("Isi Backup ($backupBranch)")
+                        .setMessage(detailText)
+                        .setPositiveButton("OK", null)
+                        .show()
                 }
                 .setNegativeButton("Tutup", null)
                 .show()
