@@ -1078,6 +1078,22 @@ class RepoScanner(private val context: Context) {
         }
     }
 
+    suspend fun fetchUnusedBackupBranches(
+        repoUrl: String,
+        token: String,
+        activeBranch: String
+    ): List<String> = withContext(Dispatchers.IO) {
+        val allBranches = fetchRepoBranches(repoUrl, token)
+        val currentBackup = "backup-${activeBranch.ifBlank { "main" }}"
+        allBranches.filter { name ->
+            name.startsWith("backup-", ignoreCase = true) &&
+                name != currentBackup &&
+                name != activeBranch &&
+                name != "main" &&
+                name != "master"
+        }
+    }
+
     suspend fun scanLocalTree(treeUri: Uri): List<TreeNode> = withContext(Dispatchers.IO) {
         val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
         val result = mutableListOf<TreeNode>()

@@ -774,7 +774,8 @@ class GithubStudioActivity : AppCompatActivity() {
         val options = arrayOf(
             "Simpan Backup Sekarang (${checkedFiles.size} file tercentang -> $backupBranch)",
             "Restore / Kembalikan File dari $backupBranch ke $activeBranch",
-            "Hapus Branch Backup ($backupBranch)"
+            "Hapus Branch Backup ($backupBranch)",
+            "Hapus Branch Bekas Backup (Tidak Terpakai)"
         )
 
         AlertDialog.Builder(this)
@@ -842,10 +843,56 @@ class GithubStudioActivity : AppCompatActivity() {
                             }
                         }
                     }
+                    3 -> {
+                        showDeleteUnusedBackupBranchesDialog(token)
+                    }
                 }
             }
             .setNegativeButton("Tutup", null)
             .show()
+    }
+
+    private fun showDeleteUnusedBackupBranchesDialog(token: String) {
+        binding.tvStudioStatus.text = "Mengecek branch bekas backup..."
+        lifecycleScope.launch {
+            try {
+                val unusedBackups = scanner.fetchUnusedBackupBranches(activeRepoUrl, token, activeBranch)
+                if (unusedBackups.isEmpty()) {
+                    binding.tvStudioStatus.text = "Tidak ada branch bekas backup yang menganggur."
+                    Toast.makeText(this@GithubStudioActivity, "Tidak ada branch bekas backup", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                binding.tvStudioStatus.text = "Pilih branch bekas backup untuk dihapus."
+                AlertDialog.Builder(this@GithubStudioActivity)
+                    .setTitle("Hapus Branch Bekas Backup")
+                    .setItems(unusedBackups.toTypedArray()) { _, which ->
+                        val targetBranch = unusedBackups[which]
+                        AlertDialog.Builder(this@GithubStudioActivity)
+                            .setTitle("Hapus Branch?")
+                            .setMessage("Yakin ingin menghapus branch bekas backup:\n$targetBranch")
+                            .setPositiveButton("Hapus") { _, _ ->
+                                binding.tvStudioStatus.text = "Menghapus $targetBranch..."
+                                lifecycleScope.launch {
+                                    try {
+                                        scanner.deleteGithubBranch(activeRepoUrl, token, targetBranch)
+                                        binding.tvStudioStatus.text = "Branch bekas $targetBranch dihapus."
+                                        Toast.makeText(this@GithubStudioActivity, "Dihapus: $targetBranch", Toast.LENGTH_SHORT).show()
+                                    } catch (e: Exception) {
+                                        binding.tvStudioStatus.text = "Gagal hapus: ${e.message}"
+                                        Toast.makeText(this@GithubStudioActivity, e.message, Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            }
+                            .setNegativeButton("Batal", null)
+                            .show()
+                    }
+                    .setNegativeButton("Batal", null)
+                    .show()
+            } catch (e: Exception) {
+                binding.tvStudioStatus.text = "Gagal cek branch backup: ${e.message}"
+                Toast.makeText(this@GithubStudioActivity, e.message, Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     private fun refreshList() {
